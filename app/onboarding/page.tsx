@@ -97,6 +97,7 @@ export default function Onboarding() {
   const [suggestedFor, setSuggestedFor] = useState("");
   const [customPath, setCustomPath] = useState("");
   const [showCatalogue, setShowCatalogue] = useState(false);
+  const [suggestError, setSuggestError] = useState<string | null>(null);
 
   // Ask Claude which career paths fit this person, when step 3 opens with a changed profile.
   const profileKey = [
@@ -106,18 +107,20 @@ export default function Onboarding() {
     profile.experience,
     profile.cvText?.length,
   ].join("|");
-  function loadSuggestions() {
-    if (suggestedFor === profileKey) return;
+  function loadSuggestions(force = false) {
+    if (!force && suggestedFor === profileKey) return;
     setSuggestedFor(profileKey);
     setSuggestions(null);
+    setSuggestError(null);
     fetch("/api/paths", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(profile),
     })
       .then((r) => r.json())
-      .then((data: { paths?: { path: string; why: string }[] }) => {
-        const paths = data.paths ?? [];
+      .then((data: { paths?: { path: string; why: string }[]; error?: string }) => {
+        if (data.error || !data.paths?.length) throw new Error(data.error ?? "No suggestions came back");
+        const paths = data.paths;
         setSuggestions(paths);
         // Pre-select the top suggestions if nothing is picked yet.
         setProfile((p) =>
@@ -126,7 +129,12 @@ export default function Onboarding() {
             : { ...p, targetPaths: paths.slice(0, 3).map((x) => x.path) },
         );
       })
-      .catch(() => setSuggestions([]));
+      .catch((err: Error) => {
+        // Show why (e.g. API credit or key problems) and open the full list so the user can still pick.
+        setSuggestions([]);
+        setSuggestError(/credit balance/i.test(err.message) ? "Claude is unavailable right now (the API account is out of credit)." : "We couldn't get suggestions just now.");
+        setShowCatalogue(true);
+      });
   }
 
   useEffect(() => {
@@ -441,6 +449,14 @@ export default function Onboarding() {
                   <div className="eyebrow mb-3 text-[11px] text-blue">
                     Suggested for you
                   </div>
+                  {suggestError && (
+                    <div className="mb-3 flex flex-wrap items-center gap-3 border-2 border-ink bg-white px-4 py-3 text-sm font-bold shadow-[3px_3px_0_#111]">
+                      <span className="flex-1">{suggestError} Pick from every path below instead.</span>
+                      <button type="button" onClick={() => loadSuggestions(true)} className="btn btn-cream press px-3 py-1.5 text-xs">
+                        Try again
+                      </button>
+                    </div>
+                  )}
                   {suggestions === null ? (
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       {Array.from({ length: 6 }).map((_, i) => (
