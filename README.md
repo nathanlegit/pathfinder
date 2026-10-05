@@ -14,7 +14,8 @@ Built for the TinyFish x UCL AI Society Build Night.
 6. **+ Track** copies an opportunity into an editable **Tracker** (status, priority, notes, deadlines, manual rows). It is saved in the browser and can be exported or imported as CSV. Deadlines within 14 days are highlighted.
 7. **Events** finds upcoming London events on Luma (hackathons, careers evenings, AI meetups) ranked by relevance, each with a link to register yourself and a **+ Track** button. Pathfinder never registers for you.
 8. **Courses** names 3 concrete skill gaps between you and your top opportunities, then finds and confirms real online courses (title, provider, cost, length) that close them.
-9. **Watch** creates a TinyFish Monitor on a tracked programme's page. It runs every day, even after you close the tab. **Check now** runs it on demand and flags whether the page changed.
+9. **Roadmap** lays the next 6 months out on a timeline: real deadlines, events, and courses scheduled to finish before your first deadline.
+10. **Watch** creates a TinyFish Monitor on a tracked programme's page. It runs every day, even after you close the tab. **Check now** runs it on demand and flags whether the page changed.
 
 ## TinyFish endpoints and what each does
 
@@ -40,7 +41,7 @@ Optional: `ANTHROPIC_MODEL` overrides the Claude model (default `claude-opus-5-5
 ## Code layout
 
 ```
-app/page.tsx               UI: profile form, live log, Opportunities / Events / Courses / Tracker tabs
+app/page.tsx               UI: profile form, live log, Opportunities / Events / Courses / Tracker / Roadmap tabs
 app/api/map/route.ts       Streams NDJSON progress + results for one run
 app/api/events/route.ts    Streams NDJSON progress + upcoming Luma events
 app/api/courses/route.ts   Streams NDJSON progress + gap-closing courses

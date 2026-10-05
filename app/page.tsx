@@ -8,9 +8,10 @@ import { TrackerTable } from "@/components/TrackerTable";
 import { EventsTable } from "@/components/EventsTable";
 import { emptyRow, loadTracker, rowFromOpportunity, saveTracker, trackerKey } from "@/lib/tracker";
 import { CoursesList } from "@/components/CoursesList";
+import { Roadmap } from "@/components/Roadmap";
 import type { Course, LumaEvent, Opportunity, Profile, ProgressEvent, TrackerRow } from "@/lib/types";
 
-type Tab = "opportunities" | "events" | "courses" | "tracker";
+type Tab = "opportunities" | "events" | "courses" | "tracker" | "roadmap";
 
 const EMPTY_PROFILE: Profile = {
   university: "",
@@ -235,6 +236,7 @@ export default function Home() {
                   ["events", `Events${events.length ? ` (${events.length})` : ""}`],
                   ["courses", `Courses${courses.length ? ` (${courses.length})` : ""}`],
                   ["tracker", `Tracker${tracker.length ? ` (${tracker.length})` : ""}`],
+                  ["roadmap", "Roadmap"],
                 ] as [Tab, string][]
               ).map(([key, label]) => (
                 <button
@@ -272,6 +274,8 @@ export default function Home() {
                   })
                 }
               />
+            ) : tab === "roadmap" ? (
+              <Roadmap opportunities={opportunities} tracker={tracker} events={events} courses={courses} />
             ) : (
               <TrackerTable
                 rows={tracker}
