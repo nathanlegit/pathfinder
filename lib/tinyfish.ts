@@ -96,21 +96,45 @@ export type AgentRun = {
   error: unknown;
 };
 
-// Synchronous agent run (blocks 15-60s). COMPLETED does not mean the goal succeeded:
-// callers must check `result`.
+// Starts an async agent run and polls GET /v1/runs/{id} until it finishes or `budgetMs` passes,
+// then cancels it. COMPLETED does not mean the goal succeeded: callers must check `result`.
 export async function runAgent(
   url: string,
   goal: string,
   outputSchema?: object,
+  budgetMs = 90_000,
 ): Promise<AgentRun> {
-  return request<AgentRun>(
-    `${AGENT_BASE}/v1/automation/run`,
+  const started = await request<{ run_id: string | null; error: unknown }>(
+    `${AGENT_BASE}/v1/automation/run-async`,
     {
       method: "POST",
-      body: JSON.stringify({ url, goal, output_schema: outputSchema, browser_profile: "lite" }),
+      body: JSON.stringify({
+        url,
+        goal,
+        output_schema: outputSchema,
+        browser_profile: "lite",
+        agent_config: { max_duration_seconds: Math.floor(budgetMs / 1000) },
+      }),
     },
-    120_000,
+    20_000,
   );
+  if (!started.run_id) throw new Error(`agent did not start: ${JSON.stringify(started.error)}`);
+
+  const deadline = Date.now() + budgetMs;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 4_000));
+    const run = await request<AgentRun & { status: string }>(
+      `${AGENT_BASE}/v1/runs/${started.run_id}`,
+      { method: "GET" },
+      15_000,
+    ).catch(() => null); // a failed poll is retried on the next tick
+    if (run && ["COMPLETED", "FAILED", "CANCELLED"].includes(run.status)) return run;
+  }
+  await fetch(`${AGENT_BASE}/v1/runs/${started.run_id}/cancel`, {
+    method: "POST",
+    headers: { "X-API-Key": apiKey() },
+  }).catch(() => {});
+  throw new Error(`agent ran out of time after ${budgetMs / 1000}s`);
 }
 
 // ---------- Monitor ----------

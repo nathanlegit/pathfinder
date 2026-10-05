@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { TARGET_PATHS, type Profile } from "@/lib/types";
 
 const YEARS = ["Foundation", "1st year", "2nd year", "3rd year", "4th year", "Master's", "PhD"];
@@ -129,6 +130,11 @@ export function ProfileForm({ profile, onChange, onSubmit, running }: Props) {
         />
       </div>
 
+      <div>
+        <label className={labelCls}>CV (optional PDF)</label>
+        <CvUpload cvText={profile.cvText} onText={(t) => set("cvText", t)} />
+      </div>
+
       <button
         type="submit"
         disabled={running}
@@ -137,5 +143,56 @@ export function ProfileForm({ profile, onChange, onSubmit, running }: Props) {
         {running ? "Mapping your path…" : "Map my path"}
       </button>
     </form>
+  );
+}
+
+// Uploads a PDF to /api/cv and stores the extracted text on the profile.
+function CvUpload({ cvText, onText }: { cvText?: string; onText: (t: string | undefined) => void }) {
+  const [status, setStatus] = useState<string | null>(null);
+
+  async function upload(file: File) {
+    setStatus("Reading CV…");
+    const form = new FormData();
+    form.append("file", file);
+    try {
+      const res = await fetch("/api/cv", { method: "POST", body: form });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      onText(data.text);
+      setStatus(`${file.name} added (${data.text.length.toLocaleString()} characters)`);
+    } catch (err) {
+      setStatus((err as Error).message);
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-2 text-sm">
+      <label className="cursor-pointer rounded-md border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 hover:border-emerald-500 hover:text-emerald-300">
+        {cvText ? "Replace PDF" : "Upload PDF"}
+        <input
+          type="file"
+          accept="application/pdf"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) upload(f);
+            e.target.value = "";
+          }}
+        />
+      </label>
+      {cvText && (
+        <button
+          type="button"
+          className="text-xs text-zinc-500 hover:text-red-400"
+          onClick={() => {
+            onText(undefined);
+            setStatus(null);
+          }}
+        >
+          remove
+        </button>
+      )}
+      {status && <span className="truncate text-xs text-zinc-500">{status}</span>}
+    </div>
   );
 }

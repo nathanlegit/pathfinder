@@ -7,7 +7,8 @@ import { generateQueries, extractOpportunities, scoreFit, type ExtractedOpportun
 import type { Opportunity, Profile, ProgressEvent } from "./types";
 
 const MAX_CANDIDATES = 15;
-const MAX_AGENT_RUNS = 3; // Agent runs take 15-60s each, so cap them per map
+const MAX_AGENT_RUNS = 3; // Agent runs often take 1-2 minutes, so cap them per map
+const AGENT_BUDGET_MS = 150_000;
 const MIN_FETCH_CHARS = 800; // below this, Fetch probably got a JS shell, so try Agent
 // Applicant-tracking portals that render with JavaScript; Fetch rarely gets the details.
 const JS_HEAVY_HOSTS = ["myworkdayjobs.com", "workday.com", "oraclecloud.com", "greenhouse.io", "lever.co", "successfactors.com", "smartrecruiters.com"];
@@ -97,29 +98,44 @@ export async function runPipeline(profile: Profile, emit: (e: ProgressEvent) => 
   for (let i = 0; i < candidates.length; i += 5) batches.push(candidates.slice(i, i + 5));
 
   const pages: FetchedPage[] = [];
-  const agentQueue: string[] = []; // URLs Fetch couldn't read well; TinyFish Agent gets a go
+  const extracted: { record: ExtractedOpportunity; url: string; via: "fetch" | "agent" }[] = [];
+
+  // TinyFish Agent for pages Fetch couldn't read well (JS-heavy careers portals).
+  // Runs start as soon as a page is queued so they overlap with Fetch and extraction.
+  const agentRuns: Promise<void>[] = [];
+  function queueAgent(url: string, why: string) {
+    if (agentRuns.length >= MAX_AGENT_RUNS) {
+      log(`  Skipped ${shortUrl(url)} (${why}; Agent limit reached)`);
+      return;
+    }
+    log(`  ${shortUrl(url)}: ${why}, sending TinyFish Agent`);
+    agentRuns.push(
+      agentExtract(url)
+        .then((records) => {
+          log(`  Agent found ${records.length} programme(s) on ${shortUrl(url)}`);
+          records.forEach((record) => extracted.push({ record, url, via: "agent" }));
+        })
+        .catch((err) => log(`  Agent failed on ${shortUrl(url)}: ${(err as Error).message}`)),
+    );
+  }
+
   await mapLimit(batches, 3, async (batch) => {
     batch.forEach((u) => log(`Reading ${shortUrl(u)}`));
     try {
       const { results, errors } = await fetchPages(batch, FETCH_PURPOSE);
       pages.push(...results);
-      errors.forEach((e) => {
-        log(`  Fetch couldn't read ${shortUrl(e.url)} (${e.error}), queued for Agent`);
-        agentQueue.push(e.url);
-      });
+      errors.forEach((e) => queueAgent(e.url, `Fetch error ${e.error}`));
     } catch (err) {
       log(`  Fetch batch failed: ${(err as Error).message}`);
     }
   });
 
   // 4. Extract structured records from each page (5 LLM calls in flight).
-  const extracted: { record: ExtractedOpportunity; url: string; via: "fetch" | "agent" }[] = [];
   await mapLimit(pages, 5, async (page) => {
     const url = page.final_url || page.url;
     const text = typeof page.text === "string" ? page.text : JSON.stringify(page.text ?? "");
     if (text.trim().length < MIN_FETCH_CHARS || JS_HEAVY_HOSTS.some((h) => url.includes(h))) {
-      log(`  ${shortUrl(url)} looks JavaScript-rendered, queued for Agent`);
-      agentQueue.push(url);
+      queueAgent(url, "looks JavaScript-rendered");
       return;
     }
     try {
@@ -132,44 +148,45 @@ export async function runPipeline(profile: Profile, emit: (e: ProgressEvent) => 
     }
   });
 
-  // 4b. TinyFish Agent for pages Fetch couldn't read (JS-heavy careers portals).
-  const agentUrls = agentQueue.slice(0, MAX_AGENT_RUNS);
-  await mapLimit(agentUrls, MAX_AGENT_RUNS, async (url) => {
-    log(`Agent browsing ${shortUrl(url)}…`);
+  // 5. Score and show the Fetch results now, so the table appears while Agent runs continue.
+  const scoreAll = async (items: typeof extracted): Promise<Opportunity[]> => {
+    let scores: { index: number; score: number; reason: string }[] = [];
     try {
-      const records = await agentExtract(url);
-      log(`  Agent found ${records.length} programme(s) on ${shortUrl(url)}`);
-      records.forEach((record) => extracted.push({ record, url, via: "agent" }));
+      scores = await scoreFit(profile, items.map((e) => e.record), today);
     } catch (err) {
-      log(`  Agent failed on ${shortUrl(url)}: ${(err as Error).message}`);
+      log(`Scoring failed: ${(err as Error).message}`);
     }
-  });
-
-  // 5. Score fit in one call, then rank.
-  log(`Scoring ${extracted.length} opportunities against your profile…`);
-  let scores: { index: number; score: number; reason: string }[] = [];
-  try {
-    scores = await scoreFit(profile, extracted.map((e) => e.record), today);
-  } catch (err) {
-    log(`Scoring failed: ${(err as Error).message}`);
-  }
-  const byIndex = new Map(scores.map((s) => [s.index, s]));
-
-  const opportunities: Opportunity[] = extracted
-    .map(({ record, url, via }, i) => ({
+    const byIndex = new Map(scores.map((s) => [s.index, s]));
+    return items.map(({ record, url, via }, i) => ({
       ...record,
       source_url: url,
       score: byIndex.get(i)?.score ?? 0,
       reason: byIndex.get(i)?.reason ?? "not scored",
       via,
-    }))
-    .sort((a, b) => b.score - a.score);
+    }));
+  };
 
-  const unique = dedupe(opportunities);
-  if (unique.length < opportunities.length) log(`Merged ${opportunities.length - unique.length} duplicate listing(s).`);
-
-  log(`Done: ${unique.length} opportunities.`);
+  const fetchedItems = [...extracted];
+  log(`Scoring ${fetchedItems.length} opportunities against your profile…`);
+  const ranked = await scoreAll(fetchedItems);
+  const unique = dedupe(ranked);
+  if (unique.length < ranked.length) log(`Merged ${ranked.length - unique.length} duplicate listing(s).`);
   emit({ type: "results", opportunities: unique });
+
+  // 6. Wait for Agent runs, then score only the new rows and re-rank everything.
+  if (agentRuns.length) {
+    log(`Results ready. Still waiting on ${agentRuns.length} TinyFish Agent run(s)…`);
+    await Promise.all(agentRuns);
+    const agentItems = extracted.slice(fetchedItems.length);
+    if (agentItems.length) {
+      log(`Scoring ${agentItems.length} opportunities found by Agent…`);
+      const all = dedupe([...ranked, ...(await scoreAll(agentItems))]);
+      emit({ type: "results", opportunities: all });
+      log(`Done: ${all.length} opportunities.`);
+      return;
+    }
+  }
+  log(`Done: ${unique.length} opportunities.`);
 }
 
 // ---------- Agent fallback ----------
@@ -200,8 +217,9 @@ const AGENT_SCHEMA = {
 async function agentExtract(url: string): Promise<ExtractedOpportunity[]> {
   const run = await runAgent(
     url,
-    'Find the spring week, insight day or first/second-year internship programmes on this careers site (up to 5). For each, return the firm, programme name, type, eligibility (year of study / degree), location, application deadline as YYYY-MM-DD (or "rolling" or "unknown" if not shown) and status (open, closed, opening soon or unknown). Only report what the site shows; never guess a deadline.',
+    'Find the spring week, insight day or first/second-year internship programmes on this careers page (up to 5). Stay on this page or at most one linked programme page; do not search or apply. For each, return the firm, programme name, type, eligibility (year of study / degree), location, application deadline as YYYY-MM-DD (or "rolling" or "unknown" if not shown) and status (open, closed, opening soon or unknown). Only report what the site shows; never guess a deadline.',
     AGENT_SCHEMA,
+    AGENT_BUDGET_MS,
   );
   // COMPLETED does not mean the goal succeeded, so validate the result shape.
   const result = run.result as { opportunities?: ExtractedOpportunity[] } | null;
@@ -215,7 +233,6 @@ async function agentExtract(url: string): Promise<ExtractedOpportunity[]> {
 // Keep one per firm+programme, preferring the firm's own site, then the higher score.
 function dedupe(list: Opportunity[]): Opportunity[] {
   const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
-  const best = new Map<string, Opportunity>();
   const onFirmSite = (o: Opportunity) => {
     try {
       const firstWord = norm(o.firm.split(/\s+/)[0] ?? "");
@@ -224,12 +241,18 @@ function dedupe(list: Opportunity[]): Opportunity[] {
       return false;
     }
   };
+  // Two listings match when the firm matches and one programme name contains the other
+  // (e.g. "Spring Insight Event" vs "2027 Spring Insight Event - EMEA").
+  const prog = (o: Opportunity) => norm(o.programme_name.replace(/20\d\d/g, ""));
+  const kept: Opportunity[] = [];
   for (const o of list) {
-    const key = norm(o.firm) + "|" + norm(o.programme_name.replace(/20\d\d/g, ""));
-    const current = best.get(key);
-    if (!current || (onFirmSite(o) && !onFirmSite(current)) || (onFirmSite(o) === onFirmSite(current) && o.score > current.score)) {
-      best.set(key, o);
+    const i = kept.findIndex(
+      (k) => norm(k.firm) === norm(o.firm) && (prog(k).includes(prog(o)) || prog(o).includes(prog(k))),
+    );
+    if (i === -1) kept.push(o);
+    else if ((onFirmSite(o) && !onFirmSite(kept[i])) || (onFirmSite(o) === onFirmSite(kept[i]) && o.score > kept[i].score)) {
+      kept[i] = o;
     }
   }
-  return [...best.values()].sort((a, b) => b.score - a.score);
+  return kept.sort((a, b) => b.score - a.score);
 }
