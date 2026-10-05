@@ -4,7 +4,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
-import type { Profile } from "./types";
+import { OPPORTUNITY_TYPES, type Profile } from "./types";
 
 const client = new Anthropic({ timeout: 90_000, maxRetries: 1 });
 const MODEL = process.env.ANTHROPIC_MODEL || "claude-opus-5-5";
@@ -47,8 +47,8 @@ const QueriesSchema = z.object({ queries: z.array(z.string()) });
 export async function generateQueries(profile: Profile, today: string): Promise<string[]> {
   const out = await parse(
     QueriesSchema,
-    "You plan web searches that find live early-careers programmes (spring weeks, insight days, first/second-year internships) for a university student. Write short keyword queries like a person would type into a search engine. Prefer queries that surface official firm careers pages or reputable listing sites.",
-    `Today is ${today}.\n\nStudent profile:\n${describeProfile(profile)}\n\nReturn 6 search queries, each targeting a different path or programme type the student is eligible for. Include the relevant recruiting year and location in each query.`,
+    "You plan web searches that find live early-careers opportunities for a university student in ANY sector: arts, culture, media, law, healthcare, education, public sector, charity, science, engineering, tech, business and more. Use each sector's own vocabulary: e.g. spring weeks and insight days (finance, law, consulting), vacation schemes (law), internships and work experience (most sectors), residencies and fellowships (arts, writing, research), graduate schemes, placements, apprenticeships, competitions and volunteering (charity, culture). Write short keyword queries like a person would type into a search engine. Prefer queries that surface official organisation pages or reputable listing sites for that sector.",
+    `Today is ${today}.\n\nStudent profile:\n${describeProfile(profile)}\n\nReturn 6 search queries spread across the student's chosen paths (only those paths; do not drift into unrelated sectors), each for an opportunity type the student is eligible for. Include the relevant year and location in each query.`,
   );
   return out.queries.slice(0, 8);
 }
@@ -63,7 +63,7 @@ const ExtractedSchema = z.object({
     z.object({
       firm: z.string(),
       programme_name: z.string(),
-      type: z.enum(["spring week", "internship", "insight day", "other"]),
+      type: z.enum(OPPORTUNITY_TYPES),
       eligibility: z.string().describe('year of study / degree requirements, or "unknown"'),
       location: z.string(),
       deadline: z.string().describe('ISO date YYYY-MM-DD, "rolling", or "unknown"'),
@@ -81,7 +81,7 @@ export async function extractOpportunities(
 ): Promise<ExtractedOpportunity[]> {
   const out = await parse(
     ExtractedSchema,
-    'You extract early-careers programme details from a web page. Use only facts stated on the page. If a field is not on the page, write "unknown". Never infer or guess a deadline. If the page is a list of several programmes, return up to 5 of the most relevant early-careers ones. If the page is not about an applicable programme (news article, generic blog, login wall), set is_opportunity=false and return an empty list.',
+    'You extract early-careers opportunity details (in any sector: internships, work experience, spring weeks, vacation schemes, residencies, fellowships, graduate schemes, placements, apprenticeships, competitions, volunteering) from a web page. Use only facts stated on the page. If a field is not on the page, write "unknown". Never infer or guess a deadline. If the page is a list of several programmes, return up to 5 of the most relevant early-careers ones. If the page is not about an applicable programme (news article, generic blog, login wall), set is_opportunity=false and return an empty list.',
     `Today is ${today}.\nSource URL: ${url}\n\nPage content:\n${pageText.slice(0, 15_000)}`,
   );
   return out.is_opportunity ? out.opportunities.slice(0, 5) : [];
@@ -108,7 +108,7 @@ export async function scoreFit(
   const list = records.map((r, i) => `[${i}] ${JSON.stringify(r)}`).join("\n");
   const out = await parse(
     ScoresSchema,
-    'You score how well each early-careers opportunity fits a student, 0-100. Give one short reason per item that cites concrete facts (e.g. "first-years eligible, closes 31 Oct, matches ML interest"). Rank ineligible (wrong year of study) or closed items low but still score them. Unknown deadlines are not a penalty on their own.',
+    'You score how well each early-careers opportunity fits a student, 0-100, weighing their chosen career paths and motivations heavily. Give one short reason per item, written to the student ("you"), that cites concrete facts (e.g. "first-years eligible, closes 31 Oct, matches your love of building things"). Rank ineligible (wrong year of study), closed, or off-path items low but still score them. Unknown deadlines are not a penalty on their own.',
     `Today is ${today}.\n\nStudent profile:\n${describeProfile(profile)}\n\nOpportunities:\n${list}\n\nReturn one score per index.`,
   );
   return out.scores;
@@ -153,7 +153,7 @@ const CoursePlanSchema = z.object({
 export async function planCourses(profile: Profile, topOpportunities: string[]) {
   return parse(
     CoursePlanSchema,
-    "You find the skill gaps between a student and the early-careers programmes they are targeting, then write web search queries for well-known online courses (Coursera, edX, MIT OCW, fast.ai, Khan Academy, university MOOCs) that close each gap.",
+    "You find the skill gaps between a student and the early-careers opportunities they are targeting (in any sector), then write web search queries for well-known free or low-cost online courses that close each gap (e.g. Coursera, edX, FutureLearn, OpenLearn, Khan Academy, MIT OCW, Google or HubSpot academies, university MOOCs, professional-body e-learning).",
     `Student profile:\n${describeProfile(profile)}\n\nTop target opportunities:\n${topOpportunities.join("\n") || "(none yet: use their target paths)"}\n\nReturn 3 gaps and 3 queries.`,
   );
 }
@@ -181,7 +181,7 @@ const QueryPlanSchema = z.object({ queries: z.array(z.string()) });
 export async function planResearchQueries(profile: Profile): Promise<string[]> {
   const out = await parse(
     QueryPlanSchema,
-    "You write web search queries that find undergraduate research opportunities: university summer research schemes (e.g. UCL, Imperial UROP, KCL), lab pages that say they take undergraduate students, and research internships open to undergraduates in London.",
+    "You write web search queries that find undergraduate research opportunities in the student's field, whatever it is: university summer research schemes (e.g. UROP-style programmes), research assistant roles, lab or project pages that take undergraduates, archive, museum or library research placements for humanities, and social-science research internships. Prefer the student's own university and London.",
     `Student profile:\n${describeProfile(profile)}\n\nReturn 4 search queries matched to the student's university and interests.`,
   );
   return out.queries.slice(0, 4);
@@ -212,7 +212,7 @@ export async function extractResearch(pageText: string, url: string, profile: Pr
 export async function planPeopleQueries(profile: Profile, topOpportunities: string[]): Promise<string[]> {
   const out = await parse(
     QueryPlanSchema,
-    "You write web search queries that find PUBLIC pages naming people a student could learn from: firm early-careers or graduate recruitment team pages, university society speaker or committee pages, event speaker lists, and university staff pages. Never target LinkedIn or social media.",
+    "You write web search queries that find PUBLIC pages naming people a student could learn from in their chosen field: organisation team or early-careers pages, university society speaker or committee pages, event and festival speaker lists, and university staff pages. Never target LinkedIn or social media.",
     `Student profile:\n${describeProfile(profile)}\n\nTop target opportunities:\n${topOpportunities.join("\n") || "(none yet: use their target paths)"}\n\nReturn 4 search queries.`,
   );
   return out.queries.slice(0, 4);
@@ -237,4 +237,24 @@ export async function extractPeople(pageText: string, url: string, profile: Prof
     `Source URL: ${url}\n\nStudent profile:\n${describeProfile(profile)}\n\nPage content:\n${pageText.slice(0, 10_000)}`,
   );
   return out.people.filter((p) => p.relevance >= 50).slice(0, 3);
+}
+
+// ---------- Career path suggestions ----------
+
+const PathsSchema = z.object({
+  paths: z.array(
+    z.object({
+      path: z.string().describe("short career path name, ideally one from the catalogue"),
+      why: z.string().describe("one short line, written to the student, on why it fits them"),
+    }),
+  ),
+});
+
+export async function suggestPaths(profile: Profile, catalogue: string[]) {
+  const out = await parse(
+    PathsSchema,
+    "You are a careers adviser. Suggest the career paths that genuinely fit this student, based on their degree, interests, motivations, experience and CV. Do not suggest paths that clash with who they are (e.g. no quant trading for an art history student unless they say they want it). Prefer names from the catalogue; add a different name only if nothing in it fits.",
+    `Catalogue: ${catalogue.join(", ")}\n\nStudent profile:\n${describeProfile(profile)}\n\nReturn 6-8 paths, best fit first.`,
+  );
+  return out.paths.slice(0, 8);
 }

@@ -5,7 +5,8 @@
 
 import { search, fetchPages, runAgent, type FetchedPage } from "./tinyfish";
 import { extractEvent, type ExtractedEvent } from "./llm";
-import { mapLimit, shortUrl } from "./pipeline";
+import { mapLimit } from "./pipeline";
+import { reporter } from "./progress";
 import type { LumaEvent, Profile, ProgressEvent } from "./types";
 
 const LUMA_DOMAINS = ["lu.ma", "luma.com"];
@@ -13,7 +14,19 @@ const MAX_EVENT_PAGES = 25;
 const MAX_AGENT_RUNS = 2;
 const MIN_CHARS = 400;
 // Luma's public London calendars list upcoming events; search hits are often past events.
-const SEED_CALENDARS = ["https://luma.com/london", "https://luma.com/discover/london/ai", "https://luma.com/discover/london/tech"];
+// Pick the London category calendars that match the student's paths.
+const LUMA_CATEGORIES: [RegExp, string][] = [
+  [/art|museum|design|fashion|film|music|theatre|publish|games|media|journal|content/i, "arts"],
+  [/environment|sustain|energy|climate/i, "climate"],
+  [/data|ai|software|cyber|product|tech|startup|engineering/i, "ai"],
+  [/software|cyber|product|tech|startup|engineering|entrepreneur/i, "tech"],
+  [/health|medic|pharma|psych|sport/i, "wellness"],
+];
+function seedCalendars(p: Profile): string[] {
+  const text = [...p.targetPaths, p.interests, p.degree].join(" ");
+  const cats = LUMA_CATEGORIES.filter(([re]) => re.test(text)).map(([, c]) => c);
+  return ["https://luma.com/london", ...[...new Set(cats)].slice(0, 2).map((c) => `https://luma.com/discover/london/${c}`)];
+}
 const PURPOSE = "Find upcoming events in London: title, date, time, venue, organiser and registration link.";
 
 // Luma event pages live at a single path segment, e.g. luma.com/t01d0nqa.
@@ -35,49 +48,58 @@ function canonical(url: string): string {
   return "https://luma.com" + u.pathname.replace(/\/$/, "");
 }
 
+// Queries come from the student's own paths and interests, so an arts student gets
+// gallery talks and portfolio reviews, not hackathons.
 function eventQueries(p: Profile): string[] {
-  const paths = p.targetPaths.length ? p.targetPaths : ["tech"];
+  const paths = p.targetPaths.length ? p.targetPaths : [p.degree || "careers"];
+  const interests = p.interests.split(",").map((s) => s.trim()).filter(Boolean);
   const fromPaths = paths.slice(0, 3).map((path) => `London ${path} event students`);
-  return [...fromPaths, "London hackathon", "London careers insight evening students", `London ${p.interests.split(",")[0] || "AI"} meetup`];
+  const fromInterests = interests.slice(0, 2).map((i) => `London ${i} talk`);
+  return [...fromPaths, ...fromInterests, `London ${paths[0]} careers networking evening`].slice(0, 6);
 }
 
 export async function runEvents(profile: Profile, emit: (e: ProgressEvent) => void) {
   const today = new Date().toISOString().slice(0, 10);
-  const log = (message: string) => emit({ type: "log", message });
+  const r = reporter(emit);
+  r.stage("plan");
 
   // 1. Search Luma.
+  r.stage("search");
   const queries = eventQueries(profile);
   emit({ type: "queries", queries: queries.map((q) => `${q} (Luma)`) });
   const found = new Set<string>();
   await mapLimit(queries, 3, async (q) => {
-    log(`Searching Luma: "${q}"`);
+    r.search(`${q} on Luma`);
     try {
       const results = await search(q, { includeDomains: LUMA_DOMAINS, purpose: PURPOSE });
       results.forEach((r) => found.add(r.url));
     } catch (err) {
-      log(`  Search failed: ${(err as Error).message}`);
+      r.info("One search didn't come back, carrying on");
+      console.warn(err);
     }
   });
 
   // 2. Split into event pages and calendar pages; read calendars to collect their event links.
   const searchEvents = new Set<string>();
-  const calendars = [...SEED_CALENDARS];
+  const calendars = seedCalendars(profile);
   for (const url of found) {
     if (isEventUrl(url)) searchEvents.add(canonical(url));
     else if (!calendars.includes(url)) calendars.push(url);
   }
-  log(`${searchEvents.size} event pages and ${calendars.length} calendar pages found.`);
+  r.stage("read");
+  r.info(`Checking ${calendars.length} London calendars for upcoming events`);
 
   const firstPass: FetchedPage[] = [];
   const calBatches: string[][] = [];
   for (let i = 0; i < Math.min(calendars.length, 10); i += 5) calBatches.push(calendars.slice(i, i + 5));
   await mapLimit(calBatches, 2, async (batch) => {
-    batch.forEach((u) => log(`Reading calendar ${shortUrl(u)}`));
+    batch.forEach((u) => r.read(u));
     try {
       const { results } = await fetchPages(batch, PURPOSE, true);
       firstPass.push(...results);
     } catch (err) {
-      log(`  Fetch failed: ${(err as Error).message}`);
+      r.info("Couldn't read some pages this time");
+      console.warn(err);
     }
   });
   // Calendar links first (they are upcoming), then search hits.
@@ -85,12 +107,13 @@ export async function runEvents(profile: Profile, emit: (e: ProgressEvent) => vo
   for (const page of firstPass) {
     (page.links ?? []).filter(isEventUrl).forEach((l) => eventUrls.add(canonical(l)));
   }
-  log(`${eventUrls.size} upcoming event links from calendars.`);
+  r.info(`${eventUrls.size} upcoming events spotted on calendars`);
   searchEvents.forEach((u) => eventUrls.add(u));
 
   // 3. Fetch the event pages themselves.
   const targets = [...eventUrls].slice(0, MAX_EVENT_PAGES);
-  log(`Reading ${targets.length} event pages…`);
+  r.info(`Opening ${targets.length} event pages`);
+  targets.forEach((u) => r.read(u));
   const batches: string[][] = [];
   for (let i = 0; i < targets.length; i += 10) batches.push(targets.slice(i, i + 10));
   const pages: FetchedPage[] = [];
@@ -101,7 +124,8 @@ export async function runEvents(profile: Profile, emit: (e: ProgressEvent) => vo
       pages.push(...results);
       errors.forEach((e) => agentQueue.push(e.url));
     } catch (err) {
-      log(`  Fetch failed: ${(err as Error).message}`);
+      r.info("Couldn't read some pages this time");
+      console.warn(err);
     }
   });
 
@@ -122,9 +146,9 @@ export async function runEvents(profile: Profile, emit: (e: ProgressEvent) => vo
     }
     try {
       const e = await extractEvent(text, url, profile, today);
-      log(keep(e, url, "fetch") ? `  ✓ ${e.title} (${e.date})` : `  – skipped ${shortUrl(url)} (${e.is_past ? "past" : !e.is_event ? "not an event" : `date ${e.date}`})`);
+      if (keep(e, url, "fetch")) r.found(`${e.title} · ${e.date}`, url);
     } catch (err) {
-      log(`  Extraction failed for ${shortUrl(url)}: ${(err as Error).message}`);
+      r.skip(url, (err as Error).message);
     }
   });
 
@@ -135,7 +159,7 @@ export async function runEvents(profile: Profile, emit: (e: ProgressEvent) => vo
 
   const agentUrls = agentQueue.slice(0, MAX_AGENT_RUNS);
   if (agentUrls.length) {
-    log(`Sending TinyFish Agent to ${agentUrls.length} page(s) Fetch couldn't read…`);
+    r.agent(`Sending TinyFish Agent to ${agentUrls.length} page${agentUrls.length > 1 ? "s" : ""} that need a real browser`);
     await mapLimit(agentUrls, MAX_AGENT_RUNS, async (url) => {
       try {
         const run = await runAgent(
@@ -155,17 +179,18 @@ export async function runEvents(profile: Profile, emit: (e: ProgressEvent) => vo
           },
           90_000,
         );
-        const r = run.result as Partial<ExtractedEvent> | null;
-        if (run.status !== "COMPLETED" || !r?.title) throw new Error("no usable result");
+        const result = run.result as Partial<ExtractedEvent> | null;
+        if (run.status !== "COMPLETED" || !result?.title) throw new Error("no usable result");
         // Agent output has no relevance rating, so rate it from its own fields.
-        const e = await extractEvent(JSON.stringify(r), url, profile, today);
-        if (keep({ ...e, is_event: true }, url, "agent")) log(`  ✓ ${e.title} (${e.date}) via Agent`);
+        const e = await extractEvent(JSON.stringify(result), url, profile, today);
+        if (keep({ ...e, is_event: true }, url, "agent")) r.found(`${e.title} · ${e.date}`, url);
       } catch (err) {
-        log(`  Agent failed on ${shortUrl(url)}: ${(err as Error).message}`);
+        r.skip(url, `Agent: ${(err as Error).message}`);
       }
     });
     emit({ type: "events", events: sorted() });
   }
 
-  log(`Done: ${events.length} upcoming events.`);
+  r.info(`All done: ${events.filter((e) => e.score >= 15).length} upcoming events`);
+  r.stage("done");
 }

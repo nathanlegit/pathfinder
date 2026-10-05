@@ -6,6 +6,8 @@ Built for the TinyFish x UCL AI Society Build Night.
 
 ## What it does
 
+Works for every career path: onboarding asks Claude to suggest paths that fit your degree, interests and motivations (an art history student gets museums and publishing, not quant), and every search prompt uses the sector's own vocabulary (residencies, vacation schemes, work experience, fellowships…). After onboarding, matches, events and research load in parallel, with courses and people following as soon as the first matches land; a loading screen shows live progress until the first results appear (~25s).
+
 Three pages: a landing page (`/`), a 3-step onboarding (`/onboarding`: CV, what drives you, preferences) and the app (`/matches`: Matches, Events, Courses, Research, People, Saved, Deadlines). Profile, results and the tracker are saved in your browser.
 
 1. You fill in a profile: university, degree, year, target paths (SWE, quant, ML research…), interests, location and experience.

@@ -1,14 +1,19 @@
 // Shared types used by the API routes and the UI.
 
-export const TARGET_PATHS = [
-  "SWE",
-  "ML/AI research",
-  "Quant",
-  "Product",
-  "Consulting",
-  "Finance",
-  "Other",
-] as const;
+// Every career path we offer in onboarding, grouped by sector. Claude also suggests
+// paths tailored to the profile, and users can type their own.
+export const CAREER_PATHS: { sector: string; paths: string[] }[] = [
+  { sector: "Creative & culture", paths: ["Arts & museums", "Film & TV", "Music", "Theatre & performing arts", "Publishing", "Games"] },
+  { sector: "Media & comms", paths: ["Journalism", "Marketing & advertising", "PR & communications", "Social media & content"] },
+  { sector: "Design", paths: ["Graphic design", "UX & product design", "Fashion", "Architecture", "Interior design"] },
+  { sector: "Law & policy", paths: ["Law (solicitor)", "Law (barrister)", "Civil service", "Policy & think tanks", "Politics", "International relations"] },
+  { sector: "People & society", paths: ["Teaching & education", "Charity & NGOs", "Social work", "Psychology", "HR & recruitment"] },
+  { sector: "Health & science", paths: ["Medicine & healthcare", "Pharma & biotech", "Lab research", "Environment & sustainability", "Public health"] },
+  { sector: "Tech", paths: ["Software engineering", "Data & AI", "Cybersecurity", "Product management", "Tech startups"] },
+  { sector: "Business & finance", paths: ["Consulting", "Investment banking", "Asset management", "Quant & trading", "Accounting", "Insurance", "Entrepreneurship"] },
+  { sector: "Engineering & built world", paths: ["Civil engineering", "Mechanical & aerospace", "Electrical & electronics", "Energy", "Property & construction"] },
+  { sector: "Other paths", paths: ["Hospitality & events", "Sport", "Retail & luxury", "Logistics & supply chain", "Academia & research"] },
+];
 
 export type Profile = {
   name?: string;
@@ -39,7 +44,21 @@ export const MOTIVATIONS = [
   "Stability and balance",
 ] as const;
 
-export type OpportunityType = "spring week" | "internship" | "insight day" | "other";
+export const OPPORTUNITY_TYPES = [
+  "spring week",
+  "insight day",
+  "internship",
+  "work experience",
+  "placement",
+  "graduate scheme",
+  "apprenticeship",
+  "fellowship",
+  "residency",
+  "competition",
+  "volunteering",
+  "other",
+] as const;
+export type OpportunityType = (typeof OPPORTUNITY_TYPES)[number];
 export type OpportunityStatus = "open" | "closed" | "opening soon" | "unknown";
 
 export type Opportunity = {
@@ -96,9 +115,15 @@ export type Person = {
   url: string;
 };
 
-// One NDJSON line streamed from /api/map to the browser.
+// Pipeline stages shown in the loading screen's stepper.
+export type Stage = "plan" | "search" | "read" | "match" | "done";
+export type ActivityKind = "search" | "read" | "found" | "skip" | "agent" | "info";
+
+// One NDJSON line streamed from the API routes to the browser.
 export type ProgressEvent =
-  | { type: "log"; message: string }
+  | { type: "stage"; stage: Stage }
+  | { type: "activity"; kind: ActivityKind; text: string; host?: string; detail?: string }
+  | { type: "stats"; searched: number; read: number; found: number }
   | { type: "queries"; queries: string[] }
   | { type: "results"; opportunities: Opportunity[] }
   | { type: "events"; events: LumaEvent[] }

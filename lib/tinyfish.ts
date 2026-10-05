@@ -74,6 +74,7 @@ export async function fetchPages(
   urls: string[],
   purpose?: string,
   links = false,
+  perUrlTimeoutMs = 45_000,
 ): Promise<{ results: FetchedPage[]; errors: FetchError[] }> {
   const data = await request<{ results: FetchedPage[]; errors: FetchError[] }>(
     FETCH_URL,
@@ -84,7 +85,7 @@ export async function fetchPages(
         format: "markdown",
         purpose,
         links,
-        per_url_timeout_ms: 45_000,
+        per_url_timeout_ms: perUrlTimeoutMs,
       }),
     },
     150_000,

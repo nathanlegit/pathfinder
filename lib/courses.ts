@@ -4,42 +4,49 @@
 
 import { search, fetchPages } from "./tinyfish";
 import { planCourses, extractCourse } from "./llm";
-import { mapLimit, shortUrl } from "./pipeline";
+import { mapLimit } from "./pipeline";
+import { hostOf, reporter } from "./progress";
 import type { Course, Profile, ProgressEvent } from "./types";
 
 const PER_QUERY = 3;
 const MAX_COURSES = 5;
 
 export async function runCourses(profile: Profile, topOpportunities: string[], emit: (e: ProgressEvent) => void) {
-  const log = (message: string) => emit({ type: "log", message });
+  const r = reporter(emit);
 
-  log("Finding skill gaps against your top opportunities…");
+  r.stage("plan");
+  r.info("Spotting the gaps between you and your top picks");
   const plan = await planCourses(profile, topOpportunities);
   emit({ type: "queries", queries: plan.queries });
-  plan.gaps.forEach((g) => log(`Gap: ${g}`));
+  plan.gaps.forEach((g) => r.info(`Gap: ${g}`));
+  r.stage("search");
 
   // Search each gap's query and keep the top few results, tagged with the gap they close.
   const candidates: { url: string; gap: string }[] = [];
   await mapLimit(plan.queries, 3, async (q) => {
     const gap = plan.gaps[plan.queries.indexOf(q)] ?? q;
-    log(`Searching: "${q}"`);
+    r.search(q);
     try {
       const results = await search(q, { location: "GB", purpose: "Find a specific online course page with its price and duration." });
       results.slice(0, PER_QUERY).forEach((r) => candidates.push({ url: r.url, gap }));
     } catch (err) {
-      log(`  Search failed: ${(err as Error).message}`);
+      r.info("One search didn't come back, carrying on");
+      console.warn(err);
     }
   });
 
-  log(`Reading ${candidates.length} course pages…`);
+  r.stage("read");
+  candidates.slice(0, 10).forEach((c) => r.read(c.url));
   const { results, errors } = await fetchPages(
     candidates.map((c) => c.url).slice(0, 10),
     "Confirm this online course's title, provider, cost and length.",
   ).catch((err) => {
-    log(`  Fetch failed: ${(err as Error).message}`);
+    r.info("Couldn't read the course pages this time");
+    console.warn(err);
     return { results: [], errors: [] };
   });
-  errors.forEach((e) => log(`  Skipped ${shortUrl(e.url)}: ${e.error}`));
+  errors.forEach((e) => r.skip(e.url, e.error));
+  r.stage("match");
 
   const courses: Course[] = [];
   const usedGaps = new Map<string, number>();
@@ -50,7 +57,7 @@ export async function runCourses(profile: Profile, topOpportunities: string[], e
     try {
       const c = await extractCourse(text, url);
       if (!c.is_course) {
-        log(`  – ${shortUrl(url)} is not a single course`);
+        r.info(`${hostOf(url)} isn't a single course, skipping`);
         return;
       }
       const gap = candidates.find((x) => x.url === page.url)?.gap ?? "";
@@ -58,12 +65,13 @@ export async function runCourses(profile: Profile, topOpportunities: string[], e
       if ((usedGaps.get(gap) ?? 0) >= 2) return;
       usedGaps.set(gap, (usedGaps.get(gap) ?? 0) + 1);
       courses.push({ title: c.title, provider: c.provider, cost: c.cost, length: c.length, url, fills_gap: gap });
-      log(`  ✓ ${c.title} (${c.provider})`);
+      r.found(`${c.title} · ${c.provider}`, url);
     } catch (err) {
-      log(`  Extraction failed for ${shortUrl(url)}: ${(err as Error).message}`);
+      r.skip(url, (err as Error).message);
     }
   });
 
   emit({ type: "courses", courses: courses.slice(0, MAX_COURSES) });
-  log(`Done: ${Math.min(courses.length, MAX_COURSES)} courses.`);
+  r.info(`All done: ${Math.min(courses.length, MAX_COURSES)} courses`);
+  r.stage("done");
 }
