@@ -112,3 +112,32 @@ export async function scoreFit(
   );
   return out.scores;
 }
+
+// ---------- Events ----------
+
+const EventSchema = z.object({
+  is_event: z.boolean().describe("true only if the page is a single specific event"),
+  title: z.string(),
+  date: z.string().describe('YYYY-MM-DD, or "unknown"'),
+  time: z.string(),
+  venue: z.string(),
+  organiser: z.string(),
+  is_past: z.boolean().describe('true if the page says "Past Event" or the date is before today'),
+  score: z.number().int().describe("0-100 relevance to the student"),
+  why: z.string().describe("one line on why it is relevant to this student"),
+});
+
+export type ExtractedEvent = z.infer<typeof EventSchema>;
+
+export async function extractEvent(
+  pageText: string,
+  url: string,
+  profile: Profile,
+  today: string,
+): Promise<ExtractedEvent> {
+  return parse(
+    EventSchema,
+    'You extract details of one event from an event page (usually Luma) and rate its relevance to a student. Use only facts on the page. Event pages often show a weekday and day without a year: resolve the year as the next occurrence on or after today unless the page says "Past Event". Write "unknown" for missing fields. Careers fairs, firm insight evenings, hackathons and talks matching the student\'s paths score highest; generic networking or paid workshops score lower.',
+    `Today is ${today}.\nSource URL: ${url}\n\nStudent profile:\n${describeProfile(profile)}\n\nPage content:\n${pageText.slice(0, 8000)}`,
+  );
+}

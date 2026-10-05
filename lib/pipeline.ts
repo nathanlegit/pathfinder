@@ -17,7 +17,7 @@ const FETCH_PURPOSE =
   "Find early-careers programme details for students: programme name, eligibility (year of study, degree), location, application deadline and whether applications are open.";
 
 // Run `fn` over `items` with at most `limit` in flight.
-async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+export async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   const out: R[] = new Array(items.length);
   let next = 0;
   async function worker() {
@@ -30,7 +30,7 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
   return out;
 }
 
-function shortUrl(url: string): string {
+export function shortUrl(url: string): string {
   try {
     const u = new URL(url);
     const path = u.pathname.length > 40 ? u.pathname.slice(0, 40) + "…" : u.pathname;

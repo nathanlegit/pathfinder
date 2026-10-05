@@ -39,11 +39,24 @@ export type Opportunity = {
   via: "fetch" | "agent";
 };
 
+export type LumaEvent = {
+  title: string;
+  date: string; // ISO YYYY-MM-DD
+  time: string;
+  venue: string;
+  organiser: string;
+  url: string;
+  score: number; // 0-100 relevance to the profile
+  why: string;
+  via: "fetch" | "agent";
+};
+
 // One NDJSON line streamed from /api/map to the browser.
 export type ProgressEvent =
   | { type: "log"; message: string }
   | { type: "queries"; queries: string[] }
   | { type: "results"; opportunities: Opportunity[] }
+  | { type: "events"; events: LumaEvent[] }
   | { type: "error"; message: string }
   | { type: "done" };
 

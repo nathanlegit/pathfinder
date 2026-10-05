@@ -38,7 +38,7 @@ export type SearchResult = {
 
 export async function search(
   query: string,
-  opts: { location?: string; purpose?: string } = {},
+  opts: { location?: string; purpose?: string; includeDomains?: string[] } = {},
 ): Promise<SearchResult[]> {
   const params = new URLSearchParams({
     query,
@@ -46,6 +46,7 @@ export async function search(
     language: "en",
   });
   if (opts.purpose) params.set("purpose", opts.purpose);
+  if (opts.includeDomains) params.set("include_domains", opts.includeDomains.join(","));
   const data = await request<{ results: SearchResult[] }>(
     `${SEARCH_URL}?${params}`,
     { method: "GET" },
@@ -62,6 +63,7 @@ export type FetchedPage = {
   title: string | null;
   description: string | null;
   text: string | null;
+  links?: string[];
 };
 
 export type FetchError = { url: string; error: string; status?: number };
@@ -70,6 +72,7 @@ export type FetchError = { url: string; error: string; status?: number };
 export async function fetchPages(
   urls: string[],
   purpose?: string,
+  links = false,
 ): Promise<{ results: FetchedPage[]; errors: FetchError[] }> {
   const data = await request<{ results: FetchedPage[]; errors: FetchError[] }>(
     FETCH_URL,
@@ -79,6 +82,7 @@ export async function fetchPages(
         urls: urls.slice(0, 10),
         format: "markdown",
         purpose,
+        links,
         per_url_timeout_ms: 45_000,
       }),
     },

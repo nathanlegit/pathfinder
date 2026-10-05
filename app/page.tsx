@@ -5,10 +5,11 @@ import { ProfileForm } from "@/components/ProfileForm";
 import { ProgressLog } from "@/components/ProgressLog";
 import { OpportunitiesTable } from "@/components/OpportunitiesTable";
 import { TrackerTable } from "@/components/TrackerTable";
-import { loadTracker, rowFromOpportunity, saveTracker, trackerKey } from "@/lib/tracker";
-import type { Opportunity, Profile, ProgressEvent, TrackerRow } from "@/lib/types";
+import { EventsTable } from "@/components/EventsTable";
+import { emptyRow, loadTracker, rowFromOpportunity, saveTracker, trackerKey } from "@/lib/tracker";
+import type { LumaEvent, Opportunity, Profile, ProgressEvent, TrackerRow } from "@/lib/types";
 
-type Tab = "opportunities" | "tracker";
+type Tab = "opportunities" | "events" | "tracker";
 
 const EMPTY_PROFILE: Profile = {
   university: "",
@@ -28,6 +29,7 @@ export default function Home() {
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("opportunities");
+  const [events, setEvents] = useState<LumaEvent[]>([]);
   const [tracker, setTracker] = useState<TrackerRow[]>([]);
   const [trackerLoaded, setTrackerLoaded] = useState(false);
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
@@ -108,14 +110,14 @@ export default function Home() {
       });
     });
 
-  // Streams NDJSON progress events from /api/map and applies each to state.
-  async function mapMyPath() {
+  // Streams NDJSON progress events from an API route and applies each to state.
+  async function runStream(path: "/api/map" | "/api/events") {
     setRunning(true);
     setLog([]);
     setQueries([]);
     setError(null);
     try {
-      const res = await fetch("/api/map", {
+      const res = await fetch(path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(profile),
@@ -139,6 +141,7 @@ export default function Home() {
           if (event.type === "log") setLog((l) => [...l, event.message]);
           else if (event.type === "queries") setQueries(event.queries);
           else if (event.type === "results") setOpportunities(event.opportunities);
+          else if (event.type === "events") setEvents(event.events);
           else if (event.type === "error") setError(event.message);
         }
       }
@@ -147,6 +150,26 @@ export default function Home() {
     } finally {
       setRunning(false);
     }
+  }
+
+  const mapMyPath = () => {
+    setTab("opportunities");
+    runStream("/api/map");
+  };
+
+  function addEventToTracker(e: LumaEvent) {
+    setTracker((rows) => [
+      ...rows,
+      {
+        ...emptyRow(),
+        firm: e.organiser,
+        programme: e.title,
+        type: "event",
+        deadline: e.date,
+        notes: [e.time, e.venue].filter((x) => x && x !== "unknown").join(" · "),
+        source_url: e.url,
+      },
+    ]);
   }
 
   return (
@@ -206,6 +229,7 @@ export default function Home() {
               {(
                 [
                   ["opportunities", `Opportunities${opportunities.length ? ` (${opportunities.length})` : ""}`],
+                  ["events", `Events${events.length ? ` (${events.length})` : ""}`],
                   ["tracker", `Tracker${tracker.length ? ` (${tracker.length})` : ""}`],
                 ] as [Tab, string][]
               ).map(([key, label]) => (
@@ -222,6 +246,15 @@ export default function Home() {
             </nav>
             {tab === "opportunities" ? (
               <OpportunitiesTable rows={opportunities} onAdd={addToTracker} trackedUrls={trackedKeys} />
+            ) : tab === "events" ? (
+              <EventsTable
+                events={events}
+                running={running}
+                canRun={!!profile.university}
+                onFind={() => runStream("/api/events")}
+                onAdd={addEventToTracker}
+                trackedKeys={trackedKeys}
+              />
             ) : (
               <TrackerTable
                 rows={tracker}
