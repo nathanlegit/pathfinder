@@ -51,12 +51,22 @@ export type LumaEvent = {
   via: "fetch" | "agent";
 };
 
+export type Course = {
+  title: string;
+  provider: string;
+  cost: string;
+  length: string;
+  url: string;
+  fills_gap: string; // which gap it closes, tied to a target opportunity
+};
+
 // One NDJSON line streamed from /api/map to the browser.
 export type ProgressEvent =
   | { type: "log"; message: string }
   | { type: "queries"; queries: string[] }
   | { type: "results"; opportunities: Opportunity[] }
   | { type: "events"; events: LumaEvent[] }
+  | { type: "courses"; courses: Course[] }
   | { type: "error"; message: string }
   | { type: "done" };
 

@@ -7,9 +7,10 @@ import { OpportunitiesTable } from "@/components/OpportunitiesTable";
 import { TrackerTable } from "@/components/TrackerTable";
 import { EventsTable } from "@/components/EventsTable";
 import { emptyRow, loadTracker, rowFromOpportunity, saveTracker, trackerKey } from "@/lib/tracker";
-import type { LumaEvent, Opportunity, Profile, ProgressEvent, TrackerRow } from "@/lib/types";
+import { CoursesList } from "@/components/CoursesList";
+import type { Course, LumaEvent, Opportunity, Profile, ProgressEvent, TrackerRow } from "@/lib/types";
 
-type Tab = "opportunities" | "events" | "tracker";
+type Tab = "opportunities" | "events" | "courses" | "tracker";
 
 const EMPTY_PROFILE: Profile = {
   university: "",
@@ -30,6 +31,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("opportunities");
   const [events, setEvents] = useState<LumaEvent[]>([]);
+  const [courses, setCourses] = useState<Course[]>([]);
   const [tracker, setTracker] = useState<TrackerRow[]>([]);
   const [trackerLoaded, setTrackerLoaded] = useState(false);
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
@@ -111,7 +113,7 @@ export default function Home() {
     });
 
   // Streams NDJSON progress events from an API route and applies each to state.
-  async function runStream(path: "/api/map" | "/api/events") {
+  async function runStream(path: "/api/map" | "/api/events" | "/api/courses", body: object = profile) {
     setRunning(true);
     setLog([]);
     setQueries([]);
@@ -120,7 +122,7 @@ export default function Home() {
       const res = await fetch(path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(profile),
+        body: JSON.stringify(body),
       });
       if (!res.ok || !res.body) {
         const body = await res.json().catch(() => ({}));
@@ -142,6 +144,7 @@ export default function Home() {
           else if (event.type === "queries") setQueries(event.queries);
           else if (event.type === "results") setOpportunities(event.opportunities);
           else if (event.type === "events") setEvents(event.events);
+          else if (event.type === "courses") setCourses(event.courses);
           else if (event.type === "error") setError(event.message);
         }
       }
@@ -230,6 +233,7 @@ export default function Home() {
                 [
                   ["opportunities", `Opportunities${opportunities.length ? ` (${opportunities.length})` : ""}`],
                   ["events", `Events${events.length ? ` (${events.length})` : ""}`],
+                  ["courses", `Courses${courses.length ? ` (${courses.length})` : ""}`],
                   ["tracker", `Tracker${tracker.length ? ` (${tracker.length})` : ""}`],
                 ] as [Tab, string][]
               ).map(([key, label]) => (
@@ -254,6 +258,19 @@ export default function Home() {
                 onFind={() => runStream("/api/events")}
                 onAdd={addEventToTracker}
                 trackedKeys={trackedKeys}
+              />
+            ) : tab === "courses" ? (
+              <CoursesList
+                courses={courses}
+                running={running}
+                canRun={!!profile.university}
+                hasOpportunities={opportunities.length > 0}
+                onFind={() =>
+                  runStream("/api/courses", {
+                    profile,
+                    topOpportunities: opportunities.slice(0, 5).map((o) => `${o.firm} ${o.programme_name} (${o.eligibility})`),
+                  })
+                }
               />
             ) : (
               <TrackerTable

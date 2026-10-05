@@ -13,7 +13,8 @@ Built for the TinyFish x UCL AI Society Build Night.
 5. You get a ranked table you can sort. Every row links to its source page.
 6. **+ Track** copies an opportunity into an editable **Tracker** (status, priority, notes, deadlines, manual rows). It is saved in the browser and can be exported or imported as CSV. Deadlines within 14 days are highlighted.
 7. **Events** finds upcoming London events on Luma (hackathons, careers evenings, AI meetups) ranked by relevance, each with a link to register yourself and a **+ Track** button. Pathfinder never registers for you.
-8. **Watch** creates a TinyFish Monitor on a tracked programme's page. It runs every day, even after you close the tab. **Check now** runs it on demand and flags whether the page changed.
+8. **Courses** names 3 concrete skill gaps between you and your top opportunities, then finds and confirms real online courses (title, provider, cost, length) that close them.
+9. **Watch** creates a TinyFish Monitor on a tracked programme's page. It runs every day, even after you close the tab. **Check now** runs it on demand and flags whether the page changed.
 
 ## TinyFish endpoints and what each does
 
@@ -39,12 +40,14 @@ Optional: `ANTHROPIC_MODEL` overrides the Claude model (default `claude-opus-5-5
 ## Code layout
 
 ```
-app/page.tsx               UI: profile form, live log, Opportunities / Events / Tracker tabs
+app/page.tsx               UI: profile form, live log, Opportunities / Events / Courses / Tracker tabs
 app/api/map/route.ts       Streams NDJSON progress + results for one run
 app/api/events/route.ts    Streams NDJSON progress + upcoming Luma events
+app/api/courses/route.ts   Streams NDJSON progress + gap-closing courses
 app/api/monitor/route.ts   Create / check / delete TinyFish Monitors
 lib/tinyfish.ts            Server-side TinyFish wrappers (search, fetch, agent, monitor)
 lib/llm.ts                 Claude: query generation, extraction, fit scoring
+lib/courses.ts             Courses: gaps → search → fetch to confirm details
 lib/events.ts              Luma events: search → calendars → event pages → extract → rate
 lib/pipeline.ts            Orchestration: queries → search → fetch/agent → extract → score
 lib/tracker.ts             Tracker storage (localStorage) and CSV import/export

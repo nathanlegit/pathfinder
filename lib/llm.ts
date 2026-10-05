@@ -141,3 +141,34 @@ export async function extractEvent(
     `Today is ${today}.\nSource URL: ${url}\n\nStudent profile:\n${describeProfile(profile)}\n\nPage content:\n${pageText.slice(0, 8000)}`,
   );
 }
+
+// ---------- Courses ----------
+
+const CoursePlanSchema = z.object({
+  gaps: z.array(z.string()).describe("2-3 concrete skill gaps between the student and their top opportunities"),
+  queries: z.array(z.string()).describe("one search query per gap for a free or low-cost online course"),
+});
+
+export async function planCourses(profile: Profile, topOpportunities: string[]) {
+  return parse(
+    CoursePlanSchema,
+    "You find the skill gaps between a student and the early-careers programmes they are targeting, then write web search queries for well-known online courses (Coursera, edX, MIT OCW, fast.ai, Khan Academy, university MOOCs) that close each gap.",
+    `Student profile:\n${describeProfile(profile)}\n\nTop target opportunities:\n${topOpportunities.join("\n") || "(none yet: use their target paths)"}\n\nReturn 3 gaps and 3 queries.`,
+  );
+}
+
+const CourseSchema = z.object({
+  is_course: z.boolean().describe("true only if the page is a single specific online course or course series"),
+  title: z.string(),
+  provider: z.string(),
+  cost: z.string().describe('e.g. "Free", "Free to audit", "£39/month", or "unknown"'),
+  length: z.string().describe('e.g. "6 weeks, 4h/week", or "unknown"'),
+});
+
+export async function extractCourse(pageText: string, url: string) {
+  return parse(
+    CourseSchema,
+    'You extract an online course\'s title, provider, cost and length from its page. Use only facts on the page; write "unknown" for anything missing.',
+    `Source URL: ${url}\n\nPage content:\n${pageText.slice(0, 8000)}`,
+  );
+}
