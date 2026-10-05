@@ -172,3 +172,68 @@ export async function extractCourse(pageText: string, url: string) {
     `Source URL: ${url}\n\nPage content:\n${pageText.slice(0, 8000)}`,
   );
 }
+
+// ---------- Research and People ----------
+
+const QueryPlanSchema = z.object({ queries: z.array(z.string()) });
+
+export async function planResearchQueries(profile: Profile): Promise<string[]> {
+  const out = await parse(
+    QueryPlanSchema,
+    "You write web search queries that find undergraduate research opportunities: university summer research schemes (e.g. UCL, Imperial UROP, KCL), lab pages that say they take undergraduate students, and research internships open to undergraduates in London.",
+    `Student profile:\n${describeProfile(profile)}\n\nReturn 4 search queries matched to the student's university and interests.`,
+  );
+  return out.queries.slice(0, 4);
+}
+
+const ResearchSchema = z.object({
+  items: z.array(
+    z.object({
+      name: z.string(),
+      organisation: z.string(),
+      takes_undergraduates: z.enum(["yes", "no", "unknown"]),
+      deadline: z.string().describe('YYYY-MM-DD, "rolling" or "unknown"'),
+      summary: z.string().describe("one line on what the student would do"),
+      why: z.string().describe("one line on why it fits this student"),
+    }),
+  ),
+});
+
+export async function extractResearch(pageText: string, url: string, profile: Profile, today: string) {
+  const out = await parse(
+    ResearchSchema,
+    'You extract undergraduate research opportunities (schemes, lab placements, research internships) from a web page. Use only facts on the page. Set takes_undergraduates to "yes" only if the page says undergraduates can take part. Never guess a deadline. Return an empty list if the page has none. At most 3 items.',
+    `Today is ${today}.\nSource URL: ${url}\n\nStudent profile:\n${describeProfile(profile)}\n\nPage content:\n${pageText.slice(0, 10_000)}`,
+  );
+  return out.items.slice(0, 3);
+}
+
+export async function planPeopleQueries(profile: Profile, topOpportunities: string[]): Promise<string[]> {
+  const out = await parse(
+    QueryPlanSchema,
+    "You write web search queries that find PUBLIC pages naming people a student could learn from: firm early-careers or graduate recruitment team pages, university society speaker or committee pages, event speaker lists, and university staff pages. Never target LinkedIn or social media.",
+    `Student profile:\n${describeProfile(profile)}\n\nTop target opportunities:\n${topOpportunities.join("\n") || "(none yet: use their target paths)"}\n\nReturn 4 search queries.`,
+  );
+  return out.queries.slice(0, 4);
+}
+
+const PeopleSchema = z.object({
+  people: z.array(
+    z.object({
+      name: z.string(),
+      role: z.string(),
+      organisation: z.string(),
+      why: z.string().describe("one line on why this person is relevant to the student"),
+      relevance: z.number().int().describe("0-100: how useful this person is to the student's target paths and opportunities"),
+    }),
+  ),
+});
+
+export async function extractPeople(pageText: string, url: string, profile: Profile) {
+  const out = await parse(
+    PeopleSchema,
+    "You pick out up to 3 named people from a public web page who are most relevant to a student's career goals (e.g. early-careers recruiters, speakers, researchers, society leads). Use only names and roles stated on the page. Do not include email addresses, phone numbers or any other contact details. Return an empty list if no relevant named people appear.",
+    `Source URL: ${url}\n\nStudent profile:\n${describeProfile(profile)}\n\nPage content:\n${pageText.slice(0, 10_000)}`,
+  );
+  return out.people.filter((p) => p.relevance >= 50).slice(0, 3);
+}

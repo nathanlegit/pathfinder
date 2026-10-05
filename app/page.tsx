@@ -9,9 +9,10 @@ import { EventsTable } from "@/components/EventsTable";
 import { emptyRow, loadTracker, rowFromOpportunity, saveTracker, trackerKey } from "@/lib/tracker";
 import { CoursesList } from "@/components/CoursesList";
 import { Roadmap } from "@/components/Roadmap";
-import type { Course, LumaEvent, Opportunity, Profile, ProgressEvent, TrackerRow } from "@/lib/types";
+import { FindPanel } from "@/components/FindPanel";
+import type { Course, LumaEvent, Person, ResearchOpportunity, Opportunity, Profile, ProgressEvent, TrackerRow } from "@/lib/types";
 
-type Tab = "opportunities" | "events" | "courses" | "tracker" | "roadmap";
+type Tab = "opportunities" | "events" | "courses" | "research" | "people" | "tracker" | "roadmap";
 
 const EMPTY_PROFILE: Profile = {
   university: "",
@@ -33,6 +34,8 @@ export default function Home() {
   const [tab, setTab] = useState<Tab>("opportunities");
   const [events, setEvents] = useState<LumaEvent[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
+  const [research, setResearch] = useState<ResearchOpportunity[]>([]);
+  const [people, setPeople] = useState<Person[]>([]);
   const [tracker, setTracker] = useState<TrackerRow[]>([]);
   const [trackerLoaded, setTrackerLoaded] = useState(false);
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
@@ -114,7 +117,10 @@ export default function Home() {
     });
 
   // Streams NDJSON progress events from an API route and applies each to state.
-  async function runStream(path: "/api/map" | "/api/events" | "/api/courses", body: object = profile) {
+  async function runStream(
+    path: "/api/map" | "/api/events" | "/api/courses" | "/api/research" | "/api/people",
+    body: object = profile,
+  ) {
     setRunning(true);
     setLog([]);
     setQueries([]);
@@ -146,6 +152,8 @@ export default function Home() {
           else if (event.type === "results") setOpportunities(event.opportunities);
           else if (event.type === "events") setEvents(event.events);
           else if (event.type === "courses") setCourses(event.courses);
+          else if (event.type === "research") setResearch(event.research);
+          else if (event.type === "people") setPeople(event.people);
           else if (event.type === "error") setError(event.message);
         }
       }
@@ -154,6 +162,16 @@ export default function Home() {
     } finally {
       setRunning(false);
     }
+  }
+
+  const topOpportunities = () =>
+    opportunities.slice(0, 5).map((o) => `${o.firm} ${o.programme_name} (${o.eligibility})`);
+
+  function addResearchToTracker(r: ResearchOpportunity) {
+    setTracker((rows) => [
+      ...rows,
+      { ...emptyRow(), firm: r.organisation, programme: r.name, type: "research", deadline: r.deadline, notes: r.summary, source_url: r.url },
+    ]);
   }
 
   const mapMyPath = () => {
@@ -229,12 +247,14 @@ export default function Home() {
         <section className="min-w-0 space-y-6">
           <ProgressLog lines={log} queries={queries} />
           <div>
-            <nav className="mb-3 flex gap-1 border-b border-zinc-800">
+            <nav className="mb-3 flex gap-1 overflow-x-auto border-b border-zinc-800">
               {(
                 [
                   ["opportunities", `Opportunities${opportunities.length ? ` (${opportunities.length})` : ""}`],
                   ["events", `Events${events.length ? ` (${events.length})` : ""}`],
                   ["courses", `Courses${courses.length ? ` (${courses.length})` : ""}`],
+                  ["research", `Research${research.length ? ` (${research.length})` : ""}`],
+                  ["people", `People${people.length ? ` (${people.length})` : ""}`],
                   ["tracker", `Tracker${tracker.length ? ` (${tracker.length})` : ""}`],
                   ["roadmap", "Roadmap"],
                 ] as [Tab, string][]
@@ -242,7 +262,7 @@ export default function Home() {
                 <button
                   key={key}
                   onClick={() => setTab(key)}
-                  className={`-mb-px border-b-2 px-3 py-2 text-sm transition ${
+                  className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2 text-sm transition ${
                     tab === key ? "border-emerald-500 text-zinc-100" : "border-transparent text-zinc-500 hover:text-zinc-300"
                   }`}
                 >
@@ -268,12 +288,76 @@ export default function Home() {
                 canRun={!!profile.university}
                 hasOpportunities={opportunities.length > 0}
                 onFind={() =>
-                  runStream("/api/courses", {
-                    profile,
-                    topOpportunities: opportunities.slice(0, 5).map((o) => `${o.firm} ${o.programme_name} (${o.eligibility})`),
-                  })
+                  runStream("/api/courses", { profile, topOpportunities: topOpportunities() })
                 }
               />
+            ) : tab === "research" ? (
+              <FindPanel
+                label="Find research opportunities"
+                hint="University research schemes and labs that take undergraduates."
+                running={running}
+                canRun={!!profile.university}
+                onFind={() => runStream("/api/research")}
+                empty={research.length === 0}
+              >
+                <ul className="space-y-3">
+                  {research.map((r, i) => {
+                    const tracked = trackedKeys.has(trackerKey(r.url, r.name));
+                    return (
+                      <li key={i} className="rounded-lg border border-zinc-800 bg-zinc-950 p-4">
+                        <div className="flex flex-wrap items-baseline justify-between gap-2">
+                          <a href={r.url} target="_blank" rel="noreferrer" className="font-medium text-zinc-100 hover:underline">
+                            {r.name}
+                          </a>
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-xs ${
+                              r.takes_undergraduates === "yes" ? "bg-emerald-500/15 text-emerald-300" : "bg-zinc-800 text-zinc-400"
+                            }`}
+                          >
+                            {r.takes_undergraduates === "yes" ? "takes undergraduates" : "undergraduates: check page"}
+                          </span>
+                        </div>
+                        <div className="text-xs text-zinc-500">
+                          {r.organisation} · deadline {r.deadline}
+                        </div>
+                        <p className="mt-2 text-sm text-zinc-300">{r.summary}</p>
+                        <p className="mt-1 text-sm text-zinc-400">{r.why}</p>
+                        <button
+                          disabled={tracked}
+                          onClick={() => addResearchToTracker(r)}
+                          className="mt-3 rounded-md border border-zinc-700 px-2 py-1 text-xs text-zinc-300 hover:border-emerald-500 hover:text-emerald-300 disabled:border-transparent disabled:text-zinc-600"
+                        >
+                          {tracked ? "Tracked" : "+ Track"}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </FindPanel>
+            ) : tab === "people" ? (
+              <FindPanel
+                label="Find people worth learning from"
+                hint="From public pages only: firm team pages, speaker lists, staff pages. No LinkedIn, no contact details."
+                running={running}
+                canRun={!!profile.university}
+                onFind={() => runStream("/api/people", { profile, topOpportunities: topOpportunities() })}
+                empty={people.length === 0}
+              >
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  {people.map((p, i) => (
+                    <div key={i} className="rounded-lg border border-zinc-800 bg-zinc-950 p-4">
+                      <div className="font-medium text-zinc-100">{p.name}</div>
+                      <div className="text-xs text-zinc-500">
+                        {p.role} · {p.organisation}
+                      </div>
+                      <p className="mt-2 text-sm text-zinc-400">{p.why}</p>
+                      <a href={p.url} target="_blank" rel="noreferrer" className="mt-2 inline-block text-xs text-emerald-400 hover:underline">
+                        Source: {new URL(p.url).hostname.replace(/^www\./, "")} ↗
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              </FindPanel>
             ) : tab === "roadmap" ? (
               <Roadmap opportunities={opportunities} tracker={tracker} events={events} courses={courses} />
             ) : (

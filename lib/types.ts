@@ -60,6 +60,25 @@ export type Course = {
   fills_gap: string; // which gap it closes, tied to a target opportunity
 };
 
+export type ResearchOpportunity = {
+  name: string;
+  organisation: string;
+  takes_undergraduates: "yes" | "unknown";
+  deadline: string;
+  summary: string;
+  why: string;
+  url: string;
+};
+
+// A person found on a public page. No contact details are collected.
+export type Person = {
+  name: string;
+  role: string;
+  organisation: string;
+  why: string;
+  url: string;
+};
+
 // One NDJSON line streamed from /api/map to the browser.
 export type ProgressEvent =
   | { type: "log"; message: string }
@@ -67,6 +86,8 @@ export type ProgressEvent =
   | { type: "results"; opportunities: Opportunity[] }
   | { type: "events"; events: LumaEvent[] }
   | { type: "courses"; courses: Course[] }
+  | { type: "research"; research: ResearchOpportunity[] }
+  | { type: "people"; people: Person[] }
   | { type: "error"; message: string }
   | { type: "done" };
 

@@ -38,7 +38,7 @@ export type SearchResult = {
 
 export async function search(
   query: string,
-  opts: { location?: string; purpose?: string; includeDomains?: string[] } = {},
+  opts: { location?: string; purpose?: string; includeDomains?: string[]; excludeDomains?: string[] } = {},
 ): Promise<SearchResult[]> {
   const params = new URLSearchParams({
     query,
@@ -47,6 +47,7 @@ export async function search(
   });
   if (opts.purpose) params.set("purpose", opts.purpose);
   if (opts.includeDomains) params.set("include_domains", opts.includeDomains.join(","));
+  if (opts.excludeDomains) params.set("exclude_domains", opts.excludeDomains.join(","));
   const data = await request<{ results: SearchResult[] }>(
     `${SEARCH_URL}?${params}`,
     { method: "GET" },
