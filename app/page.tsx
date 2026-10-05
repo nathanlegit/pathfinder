@@ -1,378 +1,244 @@
-"use client";
+// Landing page.
 
-import { useEffect, useMemo, useState } from "react";
-import { ProfileForm } from "@/components/ProfileForm";
-import { ProgressLog } from "@/components/ProgressLog";
-import { OpportunitiesTable } from "@/components/OpportunitiesTable";
-import { TrackerTable } from "@/components/TrackerTable";
-import { EventsTable } from "@/components/EventsTable";
-import { emptyRow, loadTracker, rowFromOpportunity, saveTracker, trackerKey } from "@/lib/tracker";
-import { CoursesList } from "@/components/CoursesList";
-import { Roadmap } from "@/components/Roadmap";
-import { FindPanel } from "@/components/FindPanel";
-import type { Course, LumaEvent, Person, ResearchOpportunity, Opportunity, Profile, ProgressEvent, TrackerRow } from "@/lib/types";
+import Link from "next/link";
+import { Logo } from "@/components/Logo";
 
-type Tab = "opportunities" | "events" | "courses" | "research" | "people" | "tracker" | "roadmap";
+const TICKER = ["Spring weeks", "Internships", "Insight days", "Hackathons", "Research placements", "Courses", "Events"];
 
-const EMPTY_PROFILE: Profile = {
-  university: "",
-  degree: "",
-  yearOfStudy: "1st year",
-  interests: "",
-  targetPaths: [],
-  locations: "London, UK",
-  experience: "",
-};
+const WHY = [
+  {
+    title: "Live, not stale",
+    body: "TinyFish searches and reads real careers pages right now, not a database scraped last spring. Every pick links to its source.",
+    icon: (
+      <>
+        <circle cx="11" cy="11" r="7" />
+        <path d="M20 20l-4-4" />
+      </>
+    ),
+  },
+  {
+    title: "Explains every match",
+    body: "No black-box scores. Each pick says which bit of you it fits, cites the deadline and eligibility, and flags what to brush up.",
+    icon: (
+      <>
+        <path d="M4 5h16v11H8l-4 4z" />
+        <path d="M8 10h8" />
+      </>
+    ),
+  },
+  {
+    title: "Deadlines, sorted",
+    body: "Save a role and it lands on your deadline timeline. Hit Watch and TinyFish checks the page daily for changes.",
+    icon: (
+      <>
+        <rect x="3" y="5" width="18" height="16" />
+        <path d="M3 10h18M8 3v4M16 3v4" />
+      </>
+    ),
+  },
+  {
+    title: "Built for first-timers",
+    body: "First-year with no network? Good. We start from what drives you, then find courses, events and people to close the gap.",
+    icon: <path d="M12 21s-7-4.5-7-11a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 6.5-7 11-7 11z" />,
+  },
+];
 
-export default function Home() {
-  const [profile, setProfile] = useState<Profile>(EMPTY_PROFILE);
-  const [running, setRunning] = useState(false);
-  const [log, setLog] = useState<string[]>([]);
-  const [queries, setQueries] = useState<string[]>([]);
-  const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>("opportunities");
-  const [events, setEvents] = useState<LumaEvent[]>([]);
-  const [courses, setCourses] = useState<Course[]>([]);
-  const [research, setResearch] = useState<ResearchOpportunity[]>([]);
-  const [people, setPeople] = useState<Person[]>([]);
-  const [tracker, setTracker] = useState<TrackerRow[]>([]);
-  const [trackerLoaded, setTrackerLoaded] = useState(false);
-  const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
-
-  // Load the tracker once on the client, then save on every change.
-  // localStorage isn't available during server render, so this has to happen in an effect.
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setTracker(loadTracker());
-    setTrackerLoaded(true);
-  }, []);
-  useEffect(() => {
-    if (trackerLoaded) saveTracker(tracker);
-  }, [tracker, trackerLoaded]);
-
-  const trackedKeys = useMemo(() => new Set(tracker.map((r) => trackerKey(r.source_url, r.programme))), [tracker]);
-  const watched = tracker.filter((r) => r.monitored);
-
-  function addToTracker(o: Opportunity) {
-    setTracker((rows) => [...rows, rowFromOpportunity(o)]);
-  }
-
-  const patchRow = (id: string, patch: Partial<TrackerRow>) =>
-    setTracker((rows) => rows.map((r) => (r.id === id ? { ...r, ...patch } : r)));
-
-  // Wraps a monitor API call: marks the row busy and surfaces errors in the banner.
-  async function withBusy(id: string, fn: () => Promise<void>) {
-    setBusyIds((s) => new Set(s).add(id));
-    try {
-      await fn();
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setBusyIds((s) => {
-        const next = new Set(s);
-        next.delete(id);
-        return next;
-      });
-    }
-  }
-
-  async function callMonitor(method: "POST" | "DELETE", body: object) {
-    const res = await fetch("/api/monitor", {
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error ?? `Monitor request failed (${res.status})`);
-    return data;
-  }
-
-  const watchRow = (r: TrackerRow) =>
-    withBusy(r.id, async () => {
-      const data = await callMonitor("POST", { url: r.source_url, name: `${r.firm} ${r.programme}` });
-      patchRow(r.id, { monitored: true, monitor_id: data.id, monitor_baseline_hash: data.hash ?? undefined });
-    });
-
-  const checkRow = (r: TrackerRow) =>
-    withBusy(r.id, async () => {
-      if (!r.monitor_id) return;
-      const data = await callMonitor("POST", { action: "check", id: r.monitor_id });
-      patchRow(r.id, {
-        monitor_changed: !!r.monitor_baseline_hash && !!data.hash && data.hash !== r.monitor_baseline_hash,
-        monitor_last_check: new Date().toLocaleString("en-GB", { dateStyle: "short", timeStyle: "short" }),
-      });
-    });
-
-  const unwatchRow = (r: TrackerRow) =>
-    withBusy(r.id, async () => {
-      if (r.monitor_id) await callMonitor("DELETE", { id: r.monitor_id });
-      patchRow(r.id, {
-        monitored: false,
-        monitor_id: undefined,
-        monitor_baseline_hash: undefined,
-        monitor_changed: undefined,
-        monitor_last_check: undefined,
-      });
-    });
-
-  // Streams NDJSON progress events from an API route and applies each to state.
-  async function runStream(
-    path: "/api/map" | "/api/events" | "/api/courses" | "/api/research" | "/api/people",
-    body: object = profile,
-  ) {
-    setRunning(true);
-    setLog([]);
-    setQueries([]);
-    setError(null);
-    try {
-      const res = await fetch(path, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok || !res.body) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error ?? `Request failed (${res.status})`);
-      }
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          const event = JSON.parse(line) as ProgressEvent;
-          if (event.type === "log") setLog((l) => [...l, event.message]);
-          else if (event.type === "queries") setQueries(event.queries);
-          else if (event.type === "results") setOpportunities(event.opportunities);
-          else if (event.type === "events") setEvents(event.events);
-          else if (event.type === "courses") setCourses(event.courses);
-          else if (event.type === "research") setResearch(event.research);
-          else if (event.type === "people") setPeople(event.people);
-          else if (event.type === "error") setError(event.message);
-        }
-      }
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setRunning(false);
-    }
-  }
-
-  const topOpportunities = () =>
-    opportunities.slice(0, 5).map((o) => `${o.firm} ${o.programme_name} (${o.eligibility})`);
-
-  function addResearchToTracker(r: ResearchOpportunity) {
-    setTracker((rows) => [
-      ...rows,
-      { ...emptyRow(), firm: r.organisation, programme: r.name, type: "research", deadline: r.deadline, notes: r.summary, source_url: r.url },
-    ]);
-  }
-
-  const mapMyPath = () => {
-    setTab("opportunities");
-    runStream("/api/map");
-  };
-
-  function addEventToTracker(e: LumaEvent) {
-    setTracker((rows) => [
-      ...rows,
-      {
-        ...emptyRow(),
-        firm: e.organiser,
-        programme: e.title,
-        type: "event",
-        deadline: e.date,
-        notes: [e.time, e.venue].filter((x) => x && x !== "unknown").join(" · "),
-        source_url: e.url,
-      },
-    ]);
-  }
-
+export default function Landing() {
   return (
-    <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
-      <header className="mb-8">
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-50">Pathfinder</h1>
-        <p className="mt-1 text-sm text-zinc-400">
-          Live spring weeks and internships, found on the open web by TinyFish and ranked for you.
-        </p>
+    <div className="min-h-screen overflow-x-hidden">
+      {/* Nav */}
+      <header className="mx-auto flex max-w-[1280px] flex-wrap items-center gap-4 px-6 pt-6">
+        <Logo size="lg" />
+        <nav className="eyebrow ml-auto hidden flex-wrap items-center gap-6 sm:flex">
+          <a href="#how" className="text-ink no-underline">
+            How it works
+          </a>
+          <a href="#why" className="text-ink no-underline">
+            Why us
+          </a>
+        </nav>
+        <div className="flex gap-3 max-sm:ml-auto">
+          <Link href="/matches" className="btn btn-cream press hidden shadow-[4px_4px_0_#111] sm:inline-flex">
+            My matches
+          </Link>
+          <Link href="/onboarding" className="btn btn-blue press shadow-[4px_4px_0_#111]">
+            Start free →
+          </Link>
+        </div>
       </header>
 
-      {error && (
-        <div className="mb-6 rounded-lg border border-red-900 bg-red-950/50 px-4 py-3 text-sm text-red-300">
-          {error}
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-[380px_1fr]">
-        <aside className="space-y-6">
-          <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-5">
-            <ProfileForm profile={profile} onChange={setProfile} onSubmit={mapMyPath} running={running} />
-          </section>
-
-          <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-5">
-            <h2 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-400">
-              Watching ({watched.length})
-            </h2>
-            {watched.length === 0 ? (
-              <p className="text-sm text-zinc-500">
-                Hit Watch on a tracked opportunity and TinyFish Monitor checks its page daily.
-              </p>
-            ) : (
-              <ul className="space-y-2 text-sm">
-                {watched.map((r) => (
-                  <li key={r.id} className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="truncate text-zinc-200">{r.firm}</div>
-                      <div className="truncate text-xs text-zinc-500">{r.programme}</div>
-                    </div>
-                    {r.monitor_changed && (
-                      <span className="shrink-0 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs text-amber-300">changed</span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
-            <p className="mt-3 text-xs text-zinc-600">
-              Daily checks run on TinyFish even when this tab is closed. Diffs and email alerts are in the TinyFish dashboard.
-            </p>
-          </section>
-        </aside>
-
-        <section className="min-w-0 space-y-6">
-          <ProgressLog lines={log} queries={queries} />
-          <div>
-            <nav className="mb-3 flex gap-1 overflow-x-auto border-b border-zinc-800">
-              {(
-                [
-                  ["opportunities", `Opportunities${opportunities.length ? ` (${opportunities.length})` : ""}`],
-                  ["events", `Events${events.length ? ` (${events.length})` : ""}`],
-                  ["courses", `Courses${courses.length ? ` (${courses.length})` : ""}`],
-                  ["research", `Research${research.length ? ` (${research.length})` : ""}`],
-                  ["people", `People${people.length ? ` (${people.length})` : ""}`],
-                  ["tracker", `Tracker${tracker.length ? ` (${tracker.length})` : ""}`],
-                  ["roadmap", "Roadmap"],
-                ] as [Tab, string][]
-              ).map(([key, label]) => (
-                <button
-                  key={key}
-                  onClick={() => setTab(key)}
-                  className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2 text-sm transition ${
-                    tab === key ? "border-emerald-500 text-zinc-100" : "border-transparent text-zinc-500 hover:text-zinc-300"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </nav>
-            {tab === "opportunities" ? (
-              <OpportunitiesTable rows={opportunities} onAdd={addToTracker} trackedUrls={trackedKeys} />
-            ) : tab === "events" ? (
-              <EventsTable
-                events={events}
-                running={running}
-                canRun={!!profile.university}
-                onFind={() => runStream("/api/events")}
-                onAdd={addEventToTracker}
-                trackedKeys={trackedKeys}
-              />
-            ) : tab === "courses" ? (
-              <CoursesList
-                courses={courses}
-                running={running}
-                canRun={!!profile.university}
-                hasOpportunities={opportunities.length > 0}
-                onFind={() =>
-                  runStream("/api/courses", { profile, topOpportunities: topOpportunities() })
-                }
-              />
-            ) : tab === "research" ? (
-              <FindPanel
-                label="Find research opportunities"
-                hint="University research schemes and labs that take undergraduates."
-                running={running}
-                canRun={!!profile.university}
-                onFind={() => runStream("/api/research")}
-                empty={research.length === 0}
-              >
-                <ul className="space-y-3">
-                  {research.map((r, i) => {
-                    const tracked = trackedKeys.has(trackerKey(r.url, r.name));
-                    return (
-                      <li key={i} className="rounded-lg border border-zinc-800 bg-zinc-950 p-4">
-                        <div className="flex flex-wrap items-baseline justify-between gap-2">
-                          <a href={r.url} target="_blank" rel="noreferrer" className="font-medium text-zinc-100 hover:underline">
-                            {r.name}
-                          </a>
-                          <span
-                            className={`rounded-full px-2 py-0.5 text-xs ${
-                              r.takes_undergraduates === "yes" ? "bg-emerald-500/15 text-emerald-300" : "bg-zinc-800 text-zinc-400"
-                            }`}
-                          >
-                            {r.takes_undergraduates === "yes" ? "takes undergraduates" : "undergraduates: check page"}
-                          </span>
-                        </div>
-                        <div className="text-xs text-zinc-500">
-                          {r.organisation} · deadline {r.deadline}
-                        </div>
-                        <p className="mt-2 text-sm text-zinc-300">{r.summary}</p>
-                        <p className="mt-1 text-sm text-zinc-400">{r.why}</p>
-                        <button
-                          disabled={tracked}
-                          onClick={() => addResearchToTracker(r)}
-                          className="mt-3 rounded-md border border-zinc-700 px-2 py-1 text-xs text-zinc-300 hover:border-emerald-500 hover:text-emerald-300 disabled:border-transparent disabled:text-zinc-600"
-                        >
-                          {tracked ? "Tracked" : "+ Track"}
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </FindPanel>
-            ) : tab === "people" ? (
-              <FindPanel
-                label="Find people worth learning from"
-                hint="From public pages only: firm team pages, speaker lists, staff pages. No LinkedIn, no contact details."
-                running={running}
-                canRun={!!profile.university}
-                onFind={() => runStream("/api/people", { profile, topOpportunities: topOpportunities() })}
-                empty={people.length === 0}
-              >
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  {people.map((p, i) => (
-                    <div key={i} className="rounded-lg border border-zinc-800 bg-zinc-950 p-4">
-                      <div className="font-medium text-zinc-100">{p.name}</div>
-                      <div className="text-xs text-zinc-500">
-                        {p.role} · {p.organisation}
-                      </div>
-                      <p className="mt-2 text-sm text-zinc-400">{p.why}</p>
-                      <a href={p.url} target="_blank" rel="noreferrer" className="mt-2 inline-block text-xs text-emerald-400 hover:underline">
-                        Source: {new URL(p.url).hostname.replace(/^www\./, "")} ↗
-                      </a>
-                    </div>
-                  ))}
-                </div>
-              </FindPanel>
-            ) : tab === "roadmap" ? (
-              <Roadmap opportunities={opportunities} tracker={tracker} events={events} courses={courses} />
-            ) : (
-              <TrackerTable
-                rows={tracker}
-                onChange={setTracker}
-                onWatch={watchRow}
-                onCheck={checkRow}
-                onUnwatch={unwatchRow}
-                busyIds={busyIds}
-              />
-            )}
+      {/* Hero */}
+      <section className="mx-auto flex max-w-[1280px] flex-wrap items-center gap-16 px-6 pt-16 pb-24">
+        <div className="min-w-0 flex-[1_1_520px]">
+          <div className="eyebrow inline-flex -rotate-[1.5deg] items-center gap-2.5 border-2 border-ink bg-sky px-3.5 py-2 shadow-[3px_3px_0_#111]">
+            <span className="h-2 w-2 rounded-full bg-blue" />
+            For students &amp; fresh grads
           </div>
-        </section>
+          <h1 className="mt-7 text-[clamp(52px,8vw,116px)] leading-[0.9] font-black tracking-[-0.055em]">
+            Find the path that fits <span className="hl text-blue">you</span>.
+          </h1>
+          <div className="mt-8 mb-6 h-1 w-16 bg-ink" />
+          <p className="max-w-[46ch] text-[19px] leading-relaxed text-body">
+            Drop your CV, tell us what actually drives you, and Pathfinder hunts the live web for spring weeks, internships,
+            events and research that match. Every pick comes with a reason, not just a keyword hit.
+          </p>
+          <div className="mt-9 flex flex-wrap gap-4">
+            <Link href="/onboarding" className="btn btn-blue press px-6 py-4 text-[17px] shadow-[6px_6px_0_#111]">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 16V4" />
+                <path d="M7 9l5-5 5 5" />
+                <path d="M4 20h16" />
+              </svg>
+              Drop your CV
+            </Link>
+            <a href="#how" className="btn btn-cream press px-6 py-4 text-[17px] shadow-[6px_6px_0_#111]">
+              See how it works
+            </a>
+          </div>
+          <p className="eyebrow mt-6 font-medium tracking-[0.08em] text-muted">
+            Free for students · Live web, real links · Your data stays in your browser
+          </p>
+        </div>
+
+        {/* Collage */}
+        <div className="relative min-h-[520px] min-w-0 flex-[1_1_440px]" aria-hidden="true">
+          <div className="card absolute top-0 left-[4%] w-[74%] -rotate-[4deg] p-5 shadow-[8px_8px_0_#111]">
+            <div className="eyebrow text-[11px] text-muted">your_cv.pdf</div>
+            <div className="mt-4 mb-2.5 h-3 w-3/5 bg-ink" />
+            <div className="mb-2 h-2 w-[90%] bg-line" />
+            <div className="mb-2 h-2 w-[78%] bg-line" />
+            <div className="mb-4 h-2 w-[84%] bg-sky" />
+            <div className="flex flex-wrap gap-2">
+              <span className="chip">Python</span>
+              <span className="chip">Robotics society</span>
+              <span className="chip">Hackathon winner</span>
+            </div>
+          </div>
+          <div className="absolute top-[190px] right-0 w-[78%] rotate-2 border-2 border-ink bg-blue p-6 text-cream shadow-[8px_8px_0_#111]">
+            <div className="flex items-center justify-between gap-3">
+              <span className="eyebrow text-[11px]">Strong match</span>
+              <span className="chip bg-cream text-ink">Closes in 9 days</span>
+            </div>
+            <div className="mt-3.5 text-[28px] leading-[1.05] font-black tracking-[-0.03em]">Spring Insight Programme</div>
+            <div className="mt-1.5 text-[15px] font-semibold opacity-90">Quant fund · London · Spring 2027</div>
+            <div className="mt-4 border-t-2 border-cream pt-3.5 text-sm leading-normal">
+              <b>Why you:</b> first-years eligible, matches your ML interest, and you said you love cracking hard puzzles.
+            </div>
+          </div>
+          <div className="absolute bottom-2 left-0 flex -rotate-6 items-center gap-2 border-2 border-ink bg-sky px-4 py-3.5 text-[15px] font-extrabold shadow-[4px_4px_0_#111]">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#111" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.5 6.7 19.4l1.2-6L3.4 9.3l6-.7z" />
+            </svg>
+            Matched on motivation, not just keywords
+          </div>
+          <div className="eyebrow absolute right-[2%] bottom-[-10px] flex h-24 w-24 rotate-12 items-center justify-center rounded-full border-2 border-ink bg-cream text-center text-[11px] leading-tight tracking-[0.08em] shadow-[4px_4px_0_#111]">
+            no
+            <br />
+            experience
+            <br />
+            needed
+          </div>
+        </div>
+      </section>
+
+      {/* Ticker */}
+      <div className="overflow-hidden border-y-2 border-ink bg-ink text-cream">
+        <div className="flex gap-9 px-6 py-4 text-[28px] font-black tracking-[-0.02em] whitespace-nowrap uppercase">
+          {TICKER.map((t, i) => (
+            <span key={t} className="flex gap-9">
+              {t}
+              {i < TICKER.length - 1 && <span className="text-sky">✶</span>}
+            </span>
+          ))}
+        </div>
       </div>
-    </main>
+
+      {/* How it works */}
+      <section id="how" className="mx-auto max-w-[1280px] px-6 pt-28 pb-24">
+        <div className="eyebrow tracking-[0.16em] text-blue">How it works</div>
+        <h2 className="mt-3.5 mb-14 max-w-[16ch] text-[clamp(40px,5.4vw,72px)] leading-[0.95] font-black tracking-[-0.045em]">
+          Three steps. Zero spreadsheets.
+        </h2>
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-7">
+          <div className="card p-8">
+            <div className="text-[64px] leading-none font-black tracking-[-0.05em] text-blue">01</div>
+            <h3 className="mt-5 mb-2.5 text-[26px] font-extrabold tracking-[-0.02em]">Drop your CV</h3>
+            <p className="leading-relaxed text-body">
+              A PDF is enough. Half-finished is fine. We read your skills, projects and the stuff you forgot was impressive.
+            </p>
+          </div>
+          <div className="-rotate-1 border-2 border-ink bg-sky p-8 shadow-[6px_6px_0_#111]">
+            <div className="text-[64px] leading-none font-black tracking-[-0.05em] text-blue">02</div>
+            <h3 className="mt-5 mb-2.5 text-[26px] font-extrabold tracking-[-0.02em]">Tell us what drives you</h3>
+            <p className="leading-relaxed text-[#2A2F3D]">
+              Climate? Money? Building things? Pick your motivations and we weigh them as heavily as your grades.
+            </p>
+          </div>
+          <div className="border-2 border-ink bg-blue p-8 text-cream shadow-[6px_6px_0_#111]">
+            <div className="text-[64px] leading-none font-black tracking-[-0.05em] text-sky">03</div>
+            <h3 className="mt-5 mb-2.5 text-[26px] font-extrabold tracking-[-0.02em]">Get matched, live</h3>
+            <p className="leading-relaxed">
+              TinyFish searches and reads real careers pages in about a minute. Each match gets a plain-English “why you” and
+              the deadline up front.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Why */}
+      <section id="why" className="border-y-2 border-ink bg-sand">
+        <div className="mx-auto flex max-w-[1280px] flex-wrap gap-14 px-6 py-24">
+          <div className="min-w-0 flex-[1_1_380px]">
+            <div className="eyebrow tracking-[0.16em] text-blue">Why Pathfinder</div>
+            <h2 className="mt-3.5 mb-6 text-[clamp(40px,5vw,64px)] leading-[0.95] font-black tracking-[-0.045em]">
+              Job boards show you <span className="line-through decoration-4">everything</span>. We show you{" "}
+              <span className="hl">yours</span>.
+            </h2>
+            <p className="max-w-[42ch] text-lg leading-relaxed text-body">
+              Built for people who don&apos;t have a careers network yet. No jargon, no 400-tab job hunts, no guessing whether
+              you&apos;re “qualified enough”.
+            </p>
+          </div>
+          <div className="grid min-w-0 flex-[1.3_1_520px] grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-5">
+            {WHY.map((w) => (
+              <div key={w.title} className="border-2 border-ink bg-cream p-6 shadow-[4px_4px_0_#111]">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#1E3A8F" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  {w.icon}
+                </svg>
+                <h3 className="mt-3.5 mb-2 text-xl font-extrabold">{w.title}</h3>
+                <p className="text-[15px] leading-normal text-body">{w.body}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* CTA */}
+      <section className="mx-auto max-w-[1280px] px-6 pt-24">
+        <div className="relative flex flex-wrap items-end gap-10 border-2 border-ink bg-blue p-[clamp(36px,6vw,80px)] text-cream shadow-[10px_10px_0_#111]">
+          <div className="min-w-0 flex-[1_1_520px]">
+            <h2 className="text-[clamp(44px,6.4vw,92px)] leading-[0.9] font-black tracking-[-0.055em]">Your first yes is out there.</h2>
+            <p className="mt-6 max-w-[44ch] text-[19px] leading-normal text-[#E4EAF8]">
+              Two minutes to set up. Then Pathfinder does the hunting while you&apos;re in lectures.
+            </p>
+          </div>
+          <Link href="/onboarding" className="btn btn-cream press px-7 py-5 text-lg font-black shadow-[6px_6px_0_#111]">
+            Start my path →
+          </Link>
+          <div className="eyebrow absolute -top-5 right-8 rotate-[4deg] border-2 border-ink bg-sky px-4 py-2.5 text-ink shadow-[3px_3px_0_#111]">
+            Free for students
+          </div>
+        </div>
+      </section>
+
+      <footer className="mx-auto max-w-[1280px] px-6 pt-24 pb-10">
+        <div className="mb-6 h-0.5 bg-ink" />
+        <div className="eyebrow flex flex-wrap items-center gap-x-8 gap-y-4">
+          <Logo />
+          <span className="text-muted">Powered by TinyFish Search, Fetch, Agent &amp; Monitor</span>
+          <span className="ml-auto text-muted">Made for students, by students</span>
+        </div>
+      </footer>
+    </div>
   );
 }

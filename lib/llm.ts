@@ -31,6 +31,7 @@ function describeProfile(p: Profile): string {
     `Year of study: ${p.yearOfStudy}`,
     `Target paths: ${p.targetPaths.join(", ") || "not specified"}`,
     `Interests: ${p.interests}`,
+    `Motivations (weigh these heavily): ${(p.motivations ?? []).join(", ") || "not specified"}`,
     `Location preferences: ${p.locations}`,
     `Experience: ${p.experience}`,
     p.cvText ? `CV:\n${p.cvText.slice(0, 6000)}` : "",

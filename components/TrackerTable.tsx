@@ -14,7 +14,7 @@ type Props = {
 };
 
 const cellInput =
-  "w-full rounded border border-transparent bg-transparent px-1.5 py-1 text-sm text-zinc-200 hover:border-zinc-700 focus:border-emerald-500 focus:bg-zinc-900 focus:outline-none";
+  "w-full border-2 border-transparent bg-transparent px-1.5 py-1 text-sm font-semibold text-ink hover:border-ink focus:border-ink focus:bg-white focus:outline-none";
 
 // Real dates first (soonest at top), then rolling, then unknown.
 function deadlineSort(d: string) {
@@ -45,8 +45,7 @@ export function TrackerTable({ rows, onChange, onWatch, onCheck, onUnwatch, busy
     onChange([...rows, ...imported]);
   }
 
-  const btn =
-    "rounded-md border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 hover:border-emerald-500 hover:text-emerald-300";
+  const btn = "btn btn-cream press px-3 py-1.5 text-xs shadow-[2px_2px_0_#111]";
 
   return (
     <div className="space-y-3">
@@ -71,35 +70,35 @@ export function TrackerTable({ rows, onChange, onWatch, onCheck, onUnwatch, busy
             e.target.value = "";
           }}
         />
-        <span className="ml-auto text-xs text-zinc-500">Saved in this browser. Download a CSV as a backup.</span>
+        <span className="ml-auto text-sm text-muted">Saved in this browser. Download a CSV as a backup.</span>
       </div>
 
       {rows.length === 0 ? (
-        <p className="py-12 text-center text-sm text-zinc-500">
-          Nothing tracked yet. Use “+ Track” on an opportunity, or add a row.
-        </p>
+        <div className="border-2 border-dashed border-ink bg-sand px-6 py-14 text-center font-bold">
+          Nothing saved yet. Hit ☆ Save on a match, event or research pick, or add a row.
+        </div>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-zinc-800">
+        <div className="card overflow-x-auto">
           <table className="w-full min-w-[1100px] text-sm">
-            <thead className="bg-zinc-900 text-xs uppercase tracking-wide text-zinc-400">
+            <thead className="eyebrow bg-ink text-[11px] text-cream">
               <tr>
-                <th className="px-2 py-2 text-left font-medium">Firm</th>
-                <th className="px-2 py-2 text-left font-medium">Programme</th>
-                <th className="px-2 py-2 text-left font-medium">Deadline ↑</th>
-                <th className="px-2 py-2 text-left font-medium">My status</th>
-                <th className="px-2 py-2 text-left font-medium">Priority</th>
-                <th className="px-2 py-2 text-left font-medium">Notes</th>
-                <th className="px-2 py-2 text-left font-medium">Watch</th>
+                <th className="px-2 py-3 text-left">Firm</th>
+                <th className="px-2 py-3 text-left">Programme</th>
+                <th className="px-2 py-3 text-left">Deadline ↑</th>
+                <th className="px-2 py-3 text-left">My status</th>
+                <th className="px-2 py-3 text-left">Priority</th>
+                <th className="px-2 py-3 text-left">Notes</th>
+                <th className="px-2 py-3 text-left">Watch</th>
                 <th className="px-2 py-2" />
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-800">
+            <tbody className="divide-y-2 divide-ink">
               {sorted.map((r) => {
                 const days = daysUntil(r.deadline);
                 const urgent = days !== null && days >= 0 && days <= 14;
                 const busy = busyIds.has(r.id);
                 return (
-                  <tr key={r.id} className={`align-top ${urgent ? "bg-amber-500/5" : ""}`}>
+                  <tr key={r.id} className={`align-top ${urgent ? "bg-sky" : ""}`}>
                     <td className="w-40 px-2 py-1.5">
                       <input className={cellInput} value={r.firm} onChange={(e) => update(r.id, { firm: e.target.value })} />
                       {r.source_url && (
@@ -107,7 +106,7 @@ export function TrackerTable({ rows, onChange, onWatch, onCheck, onUnwatch, busy
                           href={r.source_url}
                           target="_blank"
                           rel="noreferrer"
-                          className="block truncate px-1.5 text-xs text-emerald-400 hover:underline"
+                          className="block truncate px-1.5 text-xs font-bold"
                         >
                           source ↗
                         </a>
@@ -119,7 +118,7 @@ export function TrackerTable({ rows, onChange, onWatch, onCheck, onUnwatch, busy
                         value={r.programme}
                         onChange={(e) => update(r.id, { programme: e.target.value })}
                       />
-                      <div className="px-1.5 text-xs text-zinc-500">{r.type}</div>
+                      <div className="eyebrow px-1.5 text-[10px] text-muted">{r.type}</div>
                     </td>
                     <td className="w-36 px-2 py-1.5">
                       <input
@@ -128,7 +127,7 @@ export function TrackerTable({ rows, onChange, onWatch, onCheck, onUnwatch, busy
                         onChange={(e) => update(r.id, { deadline: e.target.value })}
                       />
                       {days !== null && (
-                        <div className={`px-1.5 text-xs ${urgent ? "font-medium text-amber-300" : days < 0 ? "text-zinc-600" : "text-zinc-500"}`}>
+                        <div className={`px-1.5 text-xs ${urgent ? "font-extrabold text-blue" : "text-muted"}`}>
                           {days < 0 ? "passed" : days === 0 ? "today" : `${days} days`}
                         </div>
                       )}
@@ -165,7 +164,7 @@ export function TrackerTable({ rows, onChange, onWatch, onCheck, onUnwatch, busy
                     </td>
                     <td className="w-44 px-2 py-1.5 text-xs">
                       {!r.source_url ? (
-                        <span className="text-zinc-600">needs a source URL</span>
+                        <span className="text-muted">needs a source URL</span>
                       ) : !r.monitored ? (
                         <button disabled={busy} className={btn} onClick={() => onWatch(r)}>
                           {busy ? "Creating…" : "Watch"}
@@ -181,7 +180,7 @@ export function TrackerTable({ rows, onChange, onWatch, onCheck, onUnwatch, busy
                             </button>
                           </div>
                           {r.monitor_changed !== undefined && (
-                            <div className={r.monitor_changed ? "text-amber-300" : "text-zinc-500"}>
+                            <div className={r.monitor_changed ? "font-extrabold text-blue" : "text-muted"}>
                               {r.monitor_changed ? "Page changed" : "No change"} · {r.monitor_last_check}
                             </div>
                           )}
@@ -190,11 +189,11 @@ export function TrackerTable({ rows, onChange, onWatch, onCheck, onUnwatch, busy
                     </td>
                     <td className="px-2 py-1.5">
                       <button
-                        className="px-1 text-zinc-600 hover:text-red-400"
+                        className="cursor-pointer px-1 text-lg font-black text-muted hover:text-ink"
                         title="Delete row"
                         onClick={() => onChange(rows.filter((x) => x.id !== r.id))}
                       >
-                        🗑
+                        ×
                       </button>
                     </td>
                   </tr>

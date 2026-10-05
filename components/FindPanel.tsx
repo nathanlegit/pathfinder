@@ -1,6 +1,6 @@
 "use client";
 
-// Shared shell for the on-demand tabs: a "find" button, a hint, and the results (or an empty state).
+// Shared shell for the on-demand views: intro line, a "find" button, then results or an empty state.
 
 export function FindPanel({
   label,
@@ -9,6 +9,7 @@ export function FindPanel({
   canRun,
   onFind,
   empty,
+  emptyText,
   children,
 }: {
   label: string;
@@ -17,21 +18,22 @@ export function FindPanel({
   canRun: boolean;
   onFind: () => void;
   empty: boolean;
+  emptyText: string;
   children: React.ReactNode;
 }) {
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          onClick={onFind}
-          disabled={running || !canRun}
-          className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {running ? "Searching…" : label}
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-wrap items-center gap-4">
+        <button type="button" onClick={onFind} disabled={running || !canRun} className="btn btn-blue press shadow-[4px_4px_0_#111]">
+          {running ? "TinyFish is hunting…" : label}
         </button>
-        <span className="text-xs text-zinc-500">{canRun ? hint : "Fill in your profile first."}</span>
+        <span className="text-sm text-muted">{hint}</span>
       </div>
-      {empty ? <p className="py-12 text-center text-sm text-zinc-500">Nothing yet.</p> : children}
+      {empty ? (
+        <div className="border-2 border-dashed border-ink bg-sand px-6 py-14 text-center font-bold">{emptyText}</div>
+      ) : (
+        children
+      )}
     </div>
   );
 }

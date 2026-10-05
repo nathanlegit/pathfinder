@@ -19,8 +19,25 @@ export type Profile = {
   targetPaths: string[];
   locations: string;
   experience: string;
+  motivations: string[];
   cvText?: string;
+  cvName?: string;
 };
+
+export const MOTIVATIONS = [
+  "Building things",
+  "Cracking hard puzzles",
+  "Helping people",
+  "Fixing the climate",
+  "Money, honestly",
+  "Making creative stuff",
+  "Research and discovery",
+  "Leading a team",
+  "Startup chaos",
+  "Public good",
+  "Seeing the world",
+  "Stability and balance",
+] as const;
 
 export type OpportunityType = "spring week" | "internship" | "insight day" | "other";
 export type OpportunityStatus = "open" | "closed" | "opening soon" | "unknown";

@@ -9,9 +9,9 @@ import type { Course, LumaEvent, Opportunity, TrackerRow } from "@/lib/types";
 type Item = { date: string; label: string; sub: string; kind: "deadline" | "event" | "course"; url?: string };
 
 const KIND_STYLE: Record<Item["kind"], string> = {
-  deadline: "border-l-amber-400",
-  event: "border-l-sky-400",
-  course: "border-l-emerald-400",
+  deadline: "border-l-blue",
+  event: "border-l-sky",
+  course: "border-l-ink",
 };
 
 const isIso = (d: string) => /^\d{4}-\d{2}-\d{2}/.test(d);
@@ -90,38 +90,38 @@ export function Roadmap({
 
   if (items.length === 0) {
     return (
-      <p className="py-12 text-center text-sm text-zinc-500">
-        Your roadmap fills in from dated opportunities, tracked rows, events and courses. Map your path first.
-      </p>
+      <div className="border-2 border-dashed border-ink bg-sand px-6 py-14 text-center font-bold">
+        Your deadlines fill in from dated matches, saved rows, events and courses. Map your path first.
+      </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap gap-4 text-xs text-zinc-500">
-        <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-amber-400" />Deadlines</span>
-        <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-sky-400" />Events</span>
-        <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-emerald-400" />Courses</span>
-        <span>Next 6 months · only items with real dates</span>
+    <div className="flex flex-col gap-8">
+      <div className="eyebrow flex flex-wrap gap-5 text-[11px] text-muted">
+        <span className="flex items-center gap-2"><span className="h-3 w-3 border-2 border-ink bg-blue" />Deadlines</span>
+        <span className="flex items-center gap-2"><span className="h-3 w-3 border-2 border-ink bg-sky" />Events</span>
+        <span className="flex items-center gap-2"><span className="h-3 w-3 border-2 border-ink bg-ink" />Courses</span>
+        <span>Next 6 months · real dates only</span>
       </div>
       {[...months.entries()].map(([month, list]) => (
         <section key={month}>
-          <h3 className="mb-2 text-sm font-medium text-zinc-300">{month}</h3>
-          <ol className="space-y-2">
+          <h3 className="mb-4 text-[28px] font-black tracking-[-0.03em]">{month}</h3>
+          <ol className="flex flex-col gap-3">
             {list.map((i, idx) => (
-              <li key={idx} className={`flex gap-4 rounded-md border border-zinc-800 border-l-4 bg-zinc-950 px-3 py-2 ${KIND_STYLE[i.kind]}`}>
-                <span className="w-16 shrink-0 font-mono text-xs leading-5 text-zinc-400">
+              <li key={idx} className={`flex gap-4 border-2 border-l-[10px] border-ink bg-white px-4 py-3 shadow-[4px_4px_0_#111] ${KIND_STYLE[i.kind]}`}>
+                <span className="eyebrow w-16 shrink-0 pt-0.5 text-[11px] text-blue">
                   {new Date(i.date + "T12:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
                 </span>
                 <div className="min-w-0">
                   {i.url ? (
-                    <a href={i.url} target="_blank" rel="noreferrer" className="text-sm text-zinc-100 hover:underline">
+                    <a href={i.url} target="_blank" rel="noreferrer" className="font-extrabold text-ink hover:text-blue">
                       {i.label}
                     </a>
                   ) : (
-                    <span className="text-sm text-zinc-100">{i.label}</span>
+                    <span className="font-extrabold">{i.label}</span>
                   )}
-                  <div className="truncate text-xs text-zinc-500">{i.sub}</div>
+                  <div className="truncate text-sm text-muted">{i.sub}</div>
                 </div>
               </li>
             ))}

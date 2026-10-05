@@ -6,6 +6,8 @@ Built for the TinyFish x UCL AI Society Build Night.
 
 ## What it does
 
+Three pages: a landing page (`/`), a 3-step onboarding (`/onboarding`: CV, what drives you, preferences) and the app (`/matches`: Matches, Events, Courses, Research, People, Saved, Deadlines). Profile, results and the tracker are saved in your browser.
+
 1. You fill in a profile: university, degree, year, target paths (SWE, quant, ML research…), interests, location and experience.
 2. Claude turns the profile into 6 targeted search queries. They're shown in the UI.
 3. TinyFish finds and reads the live pages. A live log streams every step.
@@ -43,7 +45,10 @@ Optional: `ANTHROPIC_MODEL` overrides the Claude model (default `claude-opus-5-5
 ## Code layout
 
 ```
-app/page.tsx               UI: profile form, live log, Opportunities / Events / Courses / Research / People / Tracker / Roadmap tabs
+app/page.tsx               Landing page
+app/onboarding/page.tsx    3-step profile setup (CV upload, motivations, preferences)
+app/matches/page.tsx       The app: matches feed + Events / Courses / Research / People / Saved / Deadlines
+lib/store.ts               Profile + last results in localStorage
 app/api/map/route.ts       Streams NDJSON progress + results for one run
 app/api/events/route.ts    Streams NDJSON progress + upcoming Luma events
 app/api/courses/route.ts   Streams NDJSON progress + gap-closing courses

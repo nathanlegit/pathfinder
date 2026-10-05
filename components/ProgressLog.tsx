@@ -2,40 +2,39 @@
 
 import { useEffect, useRef } from "react";
 
-export function ProgressLog({ lines, queries }: { lines: string[]; queries: string[] }) {
-  const end = useRef<HTMLDivElement>(null);
-  // Braces matter: newer browsers return a Promise from scrollIntoView, which useEffect rejects.
+// Live log of what TinyFish is doing, plus the search plan Claude wrote.
+export function ProgressLog({ lines, queries, running }: { lines: string[]; queries: string[]; running: boolean }) {
+  const box = useRef<HTMLDivElement>(null);
+  // Braces matter: newer browsers return a Promise from scroll methods, which useEffect rejects.
   useEffect(() => {
-    end.current?.scrollIntoView({ block: "nearest" });
+    box.current?.scrollTo({ top: box.current.scrollHeight });
   }, [lines.length]);
 
   return (
-    <div className="space-y-3">
+    <div className="card p-5">
+      <div className="flex items-center gap-2">
+        <span className={`h-2.5 w-2.5 rounded-full border-2 border-ink ${running ? "animate-pulse bg-blue" : "bg-sky"}`} />
+        <div className="eyebrow text-[11px] text-muted">{running ? "TinyFish is hunting…" : "TinyFish activity"}</div>
+      </div>
       {queries.length > 0 && (
-        <div>
-          <div className="mb-1 text-xs font-medium uppercase tracking-wide text-zinc-400">
-            Search plan
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {queries.map((q) => (
-              <span key={q} className="rounded-md bg-zinc-800 px-2 py-0.5 font-mono text-xs text-zinc-300">
-                {q}
-              </span>
-            ))}
-          </div>
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {queries.map((q) => (
+            <span key={q} title={q} className="max-w-full truncate border-2 border-ink bg-sky px-2 py-0.5 font-mono text-[11px] font-medium">
+              {q}
+            </span>
+          ))}
         </div>
       )}
-      <div className="h-56 overflow-y-auto rounded-lg border border-zinc-800 bg-black/40 p-3 font-mono text-xs leading-relaxed text-zinc-400">
+      <div ref={box} className="mt-3 h-52 overflow-y-auto border-2 border-ink bg-cream p-3 font-mono text-[11px] leading-relaxed">
         {lines.length === 0 ? (
-          <span className="text-zinc-600">TinyFish activity will appear here.</span>
+          <span className="text-muted">Nothing yet. Every search and page TinyFish reads shows up here.</span>
         ) : (
           lines.map((l, i) => (
-            <div key={i} className={l.startsWith("  ") ? "pl-4 text-zinc-500" : "text-zinc-300"}>
+            <div key={i} className={l.startsWith("  ") ? "pl-3 text-muted" : "text-ink"}>
               {l.trim()}
             </div>
           ))
         )}
-        <div ref={end} />
       </div>
     </div>
   );
