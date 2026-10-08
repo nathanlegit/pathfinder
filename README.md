@@ -1,4 +1,5 @@
-# pathfinder.
+# pathfinder. 
+Built for the TinyFish Build Night on 5 Oct 2026.
 
 **Find the path that fits you.** Pathfinder turns a student's CV and motivations into a live, ranked map of early-careers opportunities: internships, spring weeks, work experience, residencies, fellowships and more. It also finds the events, courses, research schemes and people that help you get there.
 
