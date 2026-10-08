@@ -7,3 +7,9 @@ out
 *.tsbuildinfo
 next-env.d.ts
 .vercel
+
+# Internal planning, design and coding-assistant files (kept locally, not published)
+PRD.md
+Pathfinder Design.html
+AGENTS.md
+CLAUDE.md
